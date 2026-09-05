@@ -22,7 +22,7 @@
 ## Coding Standards & Guidelines
 ### Native Code (C++)
 - **Standard:** C++17.
-- **Minimal Invasive Changes:** Do not modify core logic in `/Perimeter` unless absolutely necessary. Use `Exodus` (the engine's platform abstraction layer) or add Android-specific files in `/app/src/main/cpp`.
+- **Minimal Invasive Changes:** Do not modify core logic in `/Perimeter` unless absolutely necessary. Use `Exodus` (the engine's platform abstraction layer) or add Android-specific files in `/app/src/main/cpp` (do not prefix names with "Exodus").
 - **Platform Abstraction:** Use SDL2 for input, sound, and networking where possible.
 - **Graphics:** Prefer **DirectX via DXVK** (primary path); **Sokol** is used only as a fallback.
 - **Logging:** Use the Android log redirector (see `AndroidLog.cpp`) for native logs.

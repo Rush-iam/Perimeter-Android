@@ -11,8 +11,11 @@ add_definitions(-DPERIMETER_VERSION="3.1.11")
 add_definitions(-D_PERIMETER_)
 
 # Configure core project options for Android
+# TODO: Enable D3D9 via DXVK
 set(OPTION_D3D9 OFF CACHE BOOL "" FORCE)
+# TODO: Fix failed build when movies are disabled
 set(OPTION_FFMPEG_MOVIES ON CACHE BOOL "" FORCE)
+# TODO: Enable stacktrace (requries boost)
 set(OPTION_DISABLE_STACKTRACE ON CACHE BOOL "" FORCE)
 set(OPTION_SOKOL ON CACHE BOOL "" FORCE)
 set(OPTION_SOKOL_API "GLES3" CACHE STRING "" FORCE)
@@ -90,7 +93,9 @@ include_directories(${sdl2_image_SOURCE_DIR}/include)
 add_subdirectory(${PERIMETER_ROOT} perimeter_engine EXCLUDE_FROM_ALL)
 
 # Add Android-specific logging redirector to the engine target
-target_sources(perimeter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/AndroidLog.cpp")
+target_sources(perimeter PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidLog.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidPerimeterHooks.cpp")
 
 # Link the core engine library and dependencies
 target_link_libraries(
