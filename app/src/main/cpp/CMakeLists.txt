@@ -5,20 +5,19 @@ project("perimeter_android")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Sibling folder named "Perimeter"
 set(PERIMETER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../Perimeter")
 set(PERIMETER_SOURCE_DIR "${PERIMETER_ROOT}/Source")
+add_definitions(-DPERIMETER_VERSION="3.1.11")
+add_definitions(-D_PERIMETER_)
 
-# Configure sibling project options for Android
+# Configure core project options for Android
 set(OPTION_D3D9 OFF CACHE BOOL "" FORCE)
 set(OPTION_FFMPEG_MOVIES ON CACHE BOOL "" FORCE)
-set(OPTION_STATIC_BUILD ON CACHE BOOL "" FORCE)
 set(OPTION_DISABLE_STACKTRACE ON CACHE BOOL "" FORCE)
-set(PERIMETER_EXODUS ON CACHE BOOL "" FORCE)
 set(OPTION_SOKOL ON CACHE BOOL "" FORCE)
 set(OPTION_SOKOL_API "GLES3" CACHE STRING "" FORCE)
 
-# Create a proxy for 'GL' so the sibling project doesn't need modification
+# Create a proxy for 'GL' so the core project doesn't need modification
 # On Android, 'GL' (desktop) doesn't exist, we use GLESv3
 add_library(GL INTERFACE)
 target_link_libraries(GL INTERFACE GLESv3)
@@ -68,7 +67,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(ffmpeg_prebuilt)
 
-# The repo has versioned folders, we use 9.0
+# The repo has versioned folders
 set(FFMPEG_ROOT ${ffmpeg_prebuilt_SOURCE_DIR}/ffmpeg-9.0)
 set(FFMPEG_DIR ${FFMPEG_ROOT})
 
@@ -79,42 +78,20 @@ set_target_properties(ffmpeg PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_ROOT}/include"
 )
 
-# Sibling project uses <SDL.h> but FetchContent target provides <SDL2/SDL.h>
+# Core project uses <SDL.h> but FetchContent target provides <SDL2/SDL.h>
 # We add the SDL2 include directory directly to the global include paths
 include_directories(${sdl2_SOURCE_DIR}/include)
 include_directories(${sdl2_net_SOURCE_DIR})
 include_directories(${sdl2_mixer_SOURCE_DIR}/include)
 include_directories(${sdl2_image_SOURCE_DIR}/include)
 
-# Global includes for all targets (including subdirectories)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/compat)
-
-add_definitions(-D_GNU_SOURCE)
-add_definitions(-D_POSIX_C_SOURCE=200809L)
-add_compile_options(-include "${CMAKE_CURRENT_SOURCE_DIR}/compat/android_compat.h")
-
-# Include the sibling project
+# Include the core project
 # We use EXCLUDE_FROM_ALL to prevent building desktop targets not needed for Android
 add_subdirectory(${PERIMETER_ROOT} perimeter_engine EXCLUDE_FROM_ALL)
 
-# Definitions required by sibling project headers
-add_definitions(-D_PERIMETER_)
-add_definitions(-DPERIMETER_VERSION="3.1.11")
-add_definitions(-DPERIMETER_EXODUS)
-
-# Creates and names a library for JNI bridge
-add_library(native-lib SHARED
-        native-lib.cpp)
-
-# Include paths for sibling project and compatibility headers
-target_include_directories(native-lib PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/compat
-        ${PERIMETER_SOURCE_DIR}
-)
-
-# Link to the sibling engine library
-target_link_libraries(native-lib
-        perimeter
+# Link the core engine library and dependencies
+target_link_libraries(
+        perimeter PRIVATE
         SDL2::SDL2
         SDL2_net::SDL2_net
         SDL2_mixer::SDL2_mixer

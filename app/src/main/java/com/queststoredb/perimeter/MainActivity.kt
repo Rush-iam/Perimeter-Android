@@ -1,33 +1,21 @@
 package com.queststoredb.perimeter
 
-import androidx.appcompat.app.AppCompatActivity
-import android.os.Bundle
-import com.queststoredb.perimeter.databinding.ActivityMainBinding
+import org.libsdl.app.SDLActivity
 
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityMainBinding
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        // Example of a call to a native method
-        binding.sampleText.text = stringFromJNI()
+class MainActivity : SDLActivity() {
+    override fun getMainSharedObject(): String {
+        return "libperimeter.so"
     }
 
-    /**
-     * A native method that is implemented by the 'perimeter' native library,
-     * which is packaged with this application.
-     */
-    external fun stringFromJNI(): String
-
-    companion object {
-        // Used to load the 'native-lib' library on application startup.
-        init {
-            System.loadLibrary("native-lib")
-        }
+    override fun getLibraries(): Array<String> {
+        return arrayOf(
+            "c++_shared",
+            "ffmpeg",
+            "SDL2",
+            "SDL2_image",
+            "SDL2_mixer",
+            "SDL2_net",
+            "perimeter"
+        )
     }
 }

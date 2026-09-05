@@ -17,6 +17,12 @@ android {
         ndk {
             abiFilters.add("arm64-v8a")
         }
+        @Suppress("UnstableApiUsage")
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
     }
 
     buildTypes {
