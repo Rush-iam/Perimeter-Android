@@ -18,4 +18,8 @@ class MainActivity : SDLActivity() {
             "perimeter"
         )
     }
+
+    override fun getArguments(): Array<String> {
+        return arrayOf("console=1")
+    }
 }

@@ -89,6 +89,9 @@ include_directories(${sdl2_image_SOURCE_DIR}/include)
 # We use EXCLUDE_FROM_ALL to prevent building desktop targets not needed for Android
 add_subdirectory(${PERIMETER_ROOT} perimeter_engine EXCLUDE_FROM_ALL)
 
+# Add Android-specific logging redirector to the engine target
+target_sources(perimeter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/AndroidLog.cpp")
+
 # Link the core engine library and dependencies
 target_link_libraries(
         perimeter PRIVATE
