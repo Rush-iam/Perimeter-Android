@@ -3,6 +3,8 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <cstdio>
+#include <cerrno>
+#include <string>
 
 static int pfd[2];
 static pthread_t thr;
@@ -10,12 +12,41 @@ static const char *tag = "Perimeter";
 
 static void *thread_func(void*)
 {
-    ssize_t rdsz;
+    // Logcat's 4068-byte payload includes priority, tag and terminators.
+    // Stay below it so oversized lines are chunked instead of truncated.
+    constexpr size_t maxMessageBytes = 4000;
+    std::string pending;
     char buf[1024];
-    while((rdsz = read(pfd[0], buf, sizeof(buf) - 1)) > 0) {
-        if(buf[rdsz - 1] == '\n') --rdsz;
-        buf[rdsz] = 0;  // add null-terminator
-        __android_log_write(ANDROID_LOG_INFO, tag, buf);
+    for (;;) {
+        const ssize_t rdsz = read(pfd[0], buf, sizeof(buf));
+        if (rdsz < 0 && errno == EINTR) continue;
+        if (rdsz <= 0) break;
+        pending.append(buf, static_cast<size_t>(rdsz));
+
+        for (;;) {
+            const size_t newline = pending.find('\n');
+            if (newline <= maxMessageBytes) {
+                __android_log_write(ANDROID_LOG_INFO, tag,
+                                    pending.substr(0, newline).c_str());
+                pending.erase(0, newline + 1);
+            } else if (pending.size() > maxMessageBytes) {
+                size_t count = maxMessageBytes;
+                // Keep UTF-8 characters intact across oversized chunks.
+                while (count > 0 &&
+                       (static_cast<unsigned char>(pending[count]) & 0xc0) == 0x80) {
+                    --count;
+                }
+                if (count == 0) count = maxMessageBytes; // Malformed UTF-8.
+                __android_log_write(ANDROID_LOG_INFO, tag,
+                                    pending.substr(0, count).c_str());
+                pending.erase(0, count);
+            } else {
+                break; // Preserve incomplete lines across pipe reads.
+            }
+        }
+    }
+    if (!pending.empty()) {
+        __android_log_write(ANDROID_LOG_INFO, tag, pending.c_str());
     }
     return nullptr;
 }

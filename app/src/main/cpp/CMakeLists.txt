@@ -15,8 +15,7 @@ add_definitions(-D_PERIMETER_)
 set(OPTION_D3D9 OFF CACHE BOOL "" FORCE)
 # TODO: Fix failed build when movies are disabled
 set(OPTION_FFMPEG_MOVIES ON CACHE BOOL "" FORCE)
-# TODO: Enable stacktrace (requries boost)
-set(OPTION_DISABLE_STACKTRACE ON CACHE BOOL "" FORCE)
+set(OPTION_DISABLE_STACKTRACE OFF CACHE BOOL "" FORCE)
 set(OPTION_SOKOL ON CACHE BOOL "" FORCE)
 set(OPTION_SOKOL_API "GLES3" CACHE STRING "" FORCE)
 
@@ -27,6 +26,22 @@ target_link_libraries(GL INTERFACE GLESv3)
 
 # SDL2 FetchContent for Android
 include(FetchContent)
+
+# XTool uses Boost.Stacktrace header-only; compile it with the Android toolchain
+# rather than depending on ABI-specific Boost binaries. Keep the complete header
+# tree for its transitive dependencies, without configuring Boost's libraries.
+FetchContent_Declare(
+        boost_headers
+        URL https://archives.boost.io/release/1.85.0/source/boost_1_85_0.tar.bz2
+        URL_HASH SHA256=7009fe1faa1697476bdc7027703a2badb84e849b7b0baad5086b087b971f8617
+        SOURCE_SUBDIR perimeter_headers_only
+)
+FetchContent_MakeAvailable(boost_headers)
+# Supply the core project's find_package(Boost) with the fetched headers.
+set(Boost_NO_BOOST_CMAKE ON)
+set(Boost_NO_SYSTEM_PATHS ON)
+set(Boost_INCLUDE_DIR "${boost_headers_SOURCE_DIR}" CACHE PATH "Boost headers" FORCE)
+
 FetchContent_Declare(
         SDL2
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git

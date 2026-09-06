@@ -55,7 +55,7 @@ internal class GameLaunchOptionsEditor(
             .setTitle(R.string.launch_arguments)
             .setView(ScrollView(activity).apply { addView(layout) })
             .setPositiveButton(R.string.save_launch_arguments, null)
-            .setNegativeButton(android.R.string.cancel, null)
+            .setNegativeButton("Cancel", null)
             .setNeutralButton("Reset", null)
             .create()
         dialog.setOnShowListener {
@@ -198,7 +198,7 @@ internal class GameLaunchOptionsEditor(
             Option("Diagnostics", "content_dump_debug", "Export content file mapping", Kind.FLAG),
             Option("Diagnostics", "debug_key_handler", "Enable debug keyboard commands", Kind.FLAG),
             Option("Diagnostics", "dump_mt_tls", "Log thread-local storage", Kind.FLAG),
-            Option("Diagnostics", "render_debug", "Sokol Renderer debug panel", Kind.CHOICE, "Requires the Sokol renderer.", listOf(
+            Option("Diagnostics", "render_debug", "Sokol Renderer debug panel", Kind.CHOICE, choices = listOf(
                 "b" to "Buffers", "i" to "Images", "s" to "Samplers", "r" to "Shaders", "p" to "Pipelines",
                 "a" to "Attachments", "u" to "Capture", "c" to "Capabilities", "f" to "Frame statistics"),
                 defaultChoiceLabel = "Disabled"),
