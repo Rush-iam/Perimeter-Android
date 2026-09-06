@@ -29,7 +29,6 @@ internal class GameLaunchOptionsEditor(
     @Suppress("DEPRECATION") // Platform dialogs still use adjustResize for the software keyboard.
     fun show() {
         val layout = column().apply { setPadding(dp(20), dp(8), dp(20), dp(24)) }
-        layout.addView(label("Choose the settings to use on your next launch. Game default keeps the engine’s current configuration.", 14f))
         for ((section, options) in specs.groupBy { it.section }) {
             val body = column().apply { visibility = View.GONE }
             val heading = Button(activity).apply {

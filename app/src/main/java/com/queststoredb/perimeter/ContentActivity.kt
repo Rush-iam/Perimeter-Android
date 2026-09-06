@@ -44,7 +44,7 @@ class ContentActivity : Activity() {
         layout.addView(choose)
         layout.addView(Button(this).apply {
             setText(R.string.launch_arguments)
-            setOnClickListener { GameLaunchOptions(this@ContentActivity).showEditor(this@ContentActivity) }
+            setOnClickListener { showLaunchOptionsEditor() }
         })
         layout.addView(play)
         setContentView(ScrollView(this).apply { addView(layout) })
@@ -58,6 +58,11 @@ class ContentActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::storage.isInitialized) refresh()
+    }
+
+    private fun showLaunchOptionsEditor() {
+        val options = GameLaunchOptions(this)
+        GameLaunchOptionsEditor(this, options.load(), options::save).show()
     }
 
     private fun chooseOrGrantAccess() {

@@ -3,7 +3,7 @@
     <string name="content_instructions">Choose the game folder containing Perimeter.ini.</string>
     <string name="choose_content">Choose game folder</string>
     <string name="play">Play</string>
-    <string name="launch_arguments">Launch settings</string>
+    <string name="launch_arguments">Launch options</string>
     <string name="save_launch_arguments">Save</string>
     <string name="checking_content">Checking game folder…</string>
     <string name="content_ready_path">Game folder: %1$s</string>

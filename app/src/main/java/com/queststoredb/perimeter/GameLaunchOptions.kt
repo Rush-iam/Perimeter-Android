@@ -1,24 +1,22 @@
 package com.queststoredb.perimeter
 
-import android.app.Activity
 import android.content.Context
 
 class GameLaunchOptions(context: Context) {
     private val preferences = context.getSharedPreferences("game_launch", Context.MODE_PRIVATE)
-    private var text: String
-        get() = preferences.getString("arguments", "") ?: ""
-        set(value) { preferences.edit().putString("arguments", value).apply() }
+    fun load(): String = preferences.getString("arguments", "") ?: ""
+
+    fun save(text: String) {
+        parse(text)
+        preferences.edit().putString("arguments", text).apply()
+    }
 
     fun arguments(contentPath: String): Array<String> {
-        val custom = parse(text)
+        val custom = parse(load())
         val keys = custom.map { it.removePrefix("tmp_").substringBefore('=') }.toSet()
         // SDL passes each array entry as one argument, so spaces need no shell quoting
         val defaults = listOf("content=$contentPath")
         return (custom + defaults.filter { it.substringBefore('=') !in keys }).toTypedArray()
-    }
-
-    fun showEditor(activity: Activity) {
-        GameLaunchOptionsEditor(activity, text) { text = it }.show()
     }
 
     companion object {
