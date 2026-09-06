@@ -71,7 +71,6 @@ class MainActivity : SDLActivity() {
         val path = checkNotNull(storage.localFilesystemPath()) {
             "Grant all-files access and select the game folder before starting the engine"
         }
-        // SDL passes each array entry as one argument, so spaces need no shell quoting.
-        return arrayOf("console=1", "content=$path")
+        return GameLaunchOptions(this).arguments(path)
     }
 }

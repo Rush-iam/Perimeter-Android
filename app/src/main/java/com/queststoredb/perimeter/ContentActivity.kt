@@ -12,6 +12,8 @@ import android.provider.Settings
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.ScrollView
+import android.view.View
 
 /** Selects content, then obtains the raw path required by the native engine. */
 class ContentActivity : Activity() {
@@ -34,11 +36,18 @@ class ContentActivity : Activity() {
         play = Button(this).apply {
             setText(R.string.play)
             setOnClickListener { startGameIfReady() }
+            measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, measuredHeight * 3)
         }
         layout.addView(status)
         layout.addView(choose)
+        layout.addView(Button(this).apply {
+            setText(R.string.launch_arguments)
+            setOnClickListener { GameLaunchOptions(this@ContentActivity).showEditor(this@ContentActivity) }
+        })
         layout.addView(play)
-        setContentView(layout)
+        setContentView(ScrollView(this).apply { addView(layout) })
         refresh()
         if (savedInstanceState == null && Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
             !storage.hasStorageAccess()) {
