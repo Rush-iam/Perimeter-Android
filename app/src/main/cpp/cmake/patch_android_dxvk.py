@@ -10,92 +10,110 @@ root = pathlib.Path(sys.argv[1])
 variant = sys.argv[2] if len(sys.argv) > 2 else "v2"
 
 
-def replace(file, old, new):
-    path = root / file
+def replace(relative_path, old, new):
+    """Apply one required replacement, or fail when the pinned source drifts."""
+    path = root / relative_path
     text = path.read_text(encoding="utf-8")
     if new in text:
         return
     if text.count(old) != 1:
-        raise RuntimeError(f"Unexpected pinned DXVK source in {file}: {old!r}")
+        raise RuntimeError(
+            f"Unexpected pinned DXVK source in {relative_path}: {old!r}")
     path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
 
 
-def replace_if_present(file, old, new):
-    path = root / file
-    if not path.exists():
-        return
+def replace_one_of(relative_path, alternatives, new):
+    """Replace exactly one known upstream form, or fail on unexpected drift."""
+    path = root / relative_path
     text = path.read_text(encoding="utf-8")
-    if new and new in text:
+    if new in text:
         return
-    if old in text:
-        path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
+
+    matches = [old for old in alternatives if old in text]
+    if len(matches) != 1 or text.count(matches[0]) != 1:
+        raise RuntimeError(
+            f"Unexpected pinned DXVK source in {relative_path}: "
+            f"expected exactly one of {alternatives!r}")
+    path.write_text(text.replace(matches[0], new), encoding="utf-8", newline="\n")
 
 
-def write_if_missing(file, content):
-    path = root / file
+def replace_all(relative_path, old, new, expected_count):
+    """Replace a known number of repeated upstream forms strictly."""
+    path = root / relative_path
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        return
+    if text.count(old) != expected_count:
+        raise RuntimeError(
+            f"Unexpected pinned DXVK source in {relative_path}: {old!r}")
+    path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
+
+
+def write_if_missing(relative_path, content):
+    """Install an Android-only source file without overwriting an existing one."""
+    path = root / relative_path
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8", newline="\n")
 
 
-if variant == "v2":
+def patch_v2():
+    """Patch the current DXVK 2.x source."""
+    # Android loads SDL2 from the application package.
     replace("src/wsi/sdl2/wsi_platform_sdl2.cpp",
             '#elif defined(__APPLE__)',
             '#elif defined(__ANDROID__)\n        "libSDL2.so"\n#elif defined(__APPLE__)')
-    replace_if_present("meson_options.txt", "option('enable_dxgi',",
+    # Meson cross-compilation tools run on the build host, not the Android target.
+    replace("meson_options.txt", "option('enable_dxgi',",
                        "option('android_sdl2_include', type: 'string', value: '', description: 'Android SDL2 headers')\noption('enable_dxgi',")
-    replace_if_present("meson.build", "find_program('touch')",
+    replace("meson.build", "find_program('touch')",
                        "find_program('touch', native: true)")
-    replace_if_present("meson.build", "find_program('glslang', 'glslangValidator')",
+    replace("meson.build", "find_program('glslang', 'glslangValidator')",
                        "find_program('glslang', 'glslangValidator', native: true)")
-    replace_if_present("meson.build",
+    # SDL2 WSI resolves functions dynamically; compile against the app's headers.
+    replace("meson.build",
                        "  lib_sdl2 = dependency('sdl2', required: get_option('native_sdl2'))",
                        """  if platform == 'android'
-    # SDL2 WSI resolves functions dynamically; use the app's matching headers.
     assert(get_option('android_sdl2_include') != '', 'Android SDL2 headers required')
     lib_sdl2 = declare_dependency(compile_args: ['-I' + get_option('android_sdl2_include')])
   else
     lib_sdl2 = dependency('sdl2', required: get_option('native_sdl2'))
   endif""")
-    replace_if_present("meson.build",
+    # APK libraries use unversioned SONAMEs and the application's shared libc++.
+    replace("meson.build",
                        "  link_args += [\n    '-static-libgcc',\n    '-static-libstdc++',\n  ]",
                        """  if platform == 'android'
-    # APK libraries use unversioned SONAMEs and the application's shared libc++.
     dxvk_so_version = {}
   else
     link_args += ['-static-libgcc', '-static-libstdc++']
   endif""")
-else:
+
+
+def patch_v1():
+    """Patch the legacy DXVK 1.x fork used by the native compatibility path."""
     # The native 1.x fork links SDL2 directly and has no dynamic WSI loader.
+    # Android surfaces must use a composite-alpha mode reported by the driver.
     replace("src/vulkan/vulkan_presenter.cpp",
             "    swapInfo.compositeAlpha         = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;",
-            """    // Prefer opaque, otherwise select a mode actually supported by Android WSI.
-    swapInfo.compositeAlpha = static_cast<VkCompositeAlphaFlagBitsKHR>(
+            """    swapInfo.compositeAlpha = static_cast<VkCompositeAlphaFlagBitsKHR>(
       caps.supportedCompositeAlpha & (~caps.supportedCompositeAlpha + 1u));""")
-    replace_if_present("src/d3d9/d3d9_swapchain.cpp",
+    # VK_SUBOPTIMAL_KHR is persistent on some Android WSI implementations. Do
+    # not recreate the swap chain every frame while presentation is valid.
+    replace_one_of("src/d3d9/d3d9_swapchain.cpp", (
             """    if (status != VK_SUCCESS) {
       Logger::info(str::format(
         "D3D9SwapChainEx: present status before recreate: ", status));
       RecreateSwapChain(m_vsync);
     }""",
-            """    // Android WSI may report a persistently suboptimal surface
-    // even though presentation remains valid. Recreating for that status
-    // every frame causes a destructive swap-chain loop.
-    if (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR)
-      RecreateSwapChain(m_vsync);""")
-    replace_if_present("src/d3d9/d3d9_swapchain.cpp",
             "    if (status != VK_SUCCESS)\n      RecreateSwapChain(m_vsync);",
-            """    // Android WSI may report a persistently suboptimal surface
-    // even though presentation remains valid. Recreating for that status
-    // every frame causes a destructive swap-chain loop.
-    if (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR)
+        ),
+            """    if (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR)
       RecreateSwapChain(m_vsync);""")
+    # Mali exposes 16 vertex inputs; omit unused fixed-function blend inputs.
     replace("src/dxvk/dxvk_graphics.cpp",
             "    for (uint32_t i = 0; i < state.il.attributeCount(); i++) {\n      viAttribs[i] = state.ilAttributes[i].description();\n      viAttribs[i].binding = viBindingMap[state.ilAttributes[i].binding()];\n    }",
             """    uint32_t viAttributeCount = 0;
     for (uint32_t i = 0; i < state.il.attributeCount(); i++) {
-      // D3D9's fixed-function signature includes unused blend attributes at
-      // locations 16 and 17; Mali only supports 16 vertex inputs.
       if (!(m_shaders.vs->interfaceSlots().inputSlots & (1u << state.ilAttributes[i].location())))
         continue;
       viAttribs[viAttributeCount] = state.ilAttributes[i].description();
@@ -109,13 +127,11 @@ else:
             """    rsInfo.depthClampEnable &= m_pipeMgr->m_device->features().core.features.depthClamp;
 
     uint32_t sampleMask = state.ms.sampleMask();""")
+    # Compatible render passes need matching dependencies. Use conservative
+    # Android barriers and retain the attachment-sampling self dependency.
     replace("src/dxvk/dxvk_renderpass.cpp",
             "    VkRenderPassCreateInfo info;",
             """#if defined(__ANDROID__)
-    // Framebuffers and pipelines use the default render pass, while draws use
-    // load/store variants. Dependencies must match across compatible passes.
-    // Use conservative external barriers on this legacy mobile path; retain
-    // the framebuffer-local self dependency needed for attachment sampling.
     subpassDepCount = 3;
     subpassDeps[0] = { VK_SUBPASS_EXTERNAL, 0,
       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
@@ -131,7 +147,7 @@ else:
 #endif
 
     VkRenderPassCreateInfo info;""")
-    # ClipDistance is optional on mobile. Do not emit that SPIR-V capability
+    # ClipDistance is optional on mobile. Do not emit its SPIR-V capability
     # (even for disabled planes) when the Vulkan device cannot support it.
     replace("src/dxso/dxso_options.h", "    bool useDemoteToHelperInvocation = false;",
             "    bool useDemoteToHelperInvocation = false;\n    bool useClipDistance = true;")
@@ -149,8 +165,9 @@ else:
     replace("src/d3d9/d3d9_fixed_function.cpp",
             "D3D9FixedFunctionOptions::D3D9FixedFunctionOptions(const D3D9Options* options) {",
             "D3D9FixedFunctionOptions::D3D9FixedFunctionOptions(D3D9DeviceEx* device) {\n    const auto* options = device->GetOptions();\n    useClipDistance = device->GetDXVKDevice()->features().core.features.shaderClipDistance;")
-    replace_if_present("src/d3d9/d3d9_fixed_function.cpp",
-                       "      pDevice->GetOptions());", "      D3D9FixedFunctionOptions(pDevice));")
+    replace_all("src/d3d9/d3d9_fixed_function.cpp",
+                "      pDevice->GetOptions());",
+                "      D3D9FixedFunctionOptions(pDevice));", expected_count=2)
     replace("src/d3d9/d3d9_fixed_function.cpp",
             "    m_module.enableCapability(spv::CapabilityClipDistance);",
             "    if (m_options.useClipDistance)\n      m_module.enableCapability(spv::CapabilityClipDistance);")
@@ -168,7 +185,7 @@ else:
       Logger::err("D3D9: User clip planes are unsupported by this Vulkan device");
       return D3DERR_INVALIDCALL;
     }""")
-    replace_if_present("src/dxvk/dxvk_queue.cpp",
+    replace("src/dxvk/dxvk_queue.cpp",
                        '#include "dxvk_queue.h"\n',
                        '''#include "dxvk_queue.h"
 
@@ -177,7 +194,7 @@ else:
 #include <SDL_log.h>
 #endif
 ''')
-    replace_if_present("src/dxvk/dxvk_queue.cpp",
+    replace_all("src/dxvk/dxvk_queue.cpp",
                        "        m_device->waitForIdle();",
                        '''#if defined(__ANDROID__)
         if (status == VK_ERROR_DEVICE_LOST) {
@@ -185,38 +202,39 @@ else:
           std::_Exit(2);
         }
 #endif
-        m_device->waitForIdle();''')
+        m_device->waitForIdle();''', expected_count=2)
     # Upgrade checkouts that already received the old immediate-exit patch.
-    replace_if_present("src/dxvk/dxvk_queue.cpp", "#include <cstdlib>\n#endif",
+    replace("src/dxvk/dxvk_queue.cpp", "#include <cstdlib>\n#endif",
                        "#include <cstdlib>\n#include <SDL_log.h>\n#endif")
-    replace_if_present("src/dxvk/dxvk_queue.cpp",
+    replace("src/dxvk/dxvk_queue.cpp",
                        "#if defined(__ANDROID__)\n        if (status == VK_ERROR_DEVICE_LOST)\n          std::_Exit(2);\n#endif\n", "")
-    replace_if_present("meson.build", "lib_sdl2    = dependency('SDL2')",
+    replace("meson.build", "lib_sdl2    = dependency('SDL2')",
                        "lib_sdl2    = declare_dependency(include_directories: include_directories(get_option('android_sdl2_include')), link_args: ['-L' + get_option('android_sdl2_lib'), '-lSDL2'])" )
-    replace_if_present("meson.build", "lib_vulkan  = dxvk_compiler.find_library('vulkan-1', dirs : dxvk_library_path)",
-                       "lib_vulkan  = dxvk_compiler.find_library('vulkan')")
-    replace_if_present("meson.build", "lib_vulkan  = dependency('vulkan')",
-                       "lib_vulkan  = dxvk_compiler.find_library('vulkan')")
-    replace_if_present("meson.build", "wrc = find_program('echo')",
+    replace_all("meson.build",
+                "lib_vulkan  = dxvk_compiler.find_library('vulkan-1', dirs : dxvk_library_path)",
+                "lib_vulkan  = dxvk_compiler.find_library('vulkan')", expected_count=2)
+    replace("meson.build", "lib_vulkan  = dependency('vulkan')",
+            "lib_vulkan  = dxvk_compiler.find_library('vulkan')")
+    replace("meson.build", "wrc = find_program('echo')",
                        "wrc = find_program('cmake', native: true)")
-    replace_if_present("meson.build", "wrc = find_program('cmd.exe', native: true)",
+    replace("meson.build", "wrc = find_program('cmd.exe', native: true)",
                        "wrc = find_program('cmake', native: true)")
-    replace_if_present("meson.build", "arguments : [ 'Ignoring: ', '@INPUT@' ]",
+    replace("meson.build", "arguments : [ 'Ignoring: ', '@INPUT@' ]",
                        "arguments : [ '-E', 'touch', '@OUTPUT@' ]")
-    replace_if_present("meson.build", "arguments : [ '/c', 'echo', 'Ignoring: ', '@INPUT@' ]",
+    replace("meson.build", "arguments : [ '/c', 'echo', 'Ignoring: ', '@INPUT@' ]",
                        "arguments : [ '-E', 'touch', '@OUTPUT@' ]")
-    replace_if_present("meson.build", "glsl_compiler = find_program('glslangValidator')",
+    replace("meson.build", "glsl_compiler = find_program('glslangValidator')",
                        "glsl_compiler = find_program('glslang', native: true)")
-    replace_if_present("src/d3d9/meson.build", "dependencies        : [ dxso_dep, dxvk_dep, wsi_dep ],",
+    replace("src/d3d9/meson.build", "dependencies        : [ dxso_dep, dxvk_dep, wsi_dep ],",
                        "dependencies        : [ dxso_dep, dxvk_dep, wsi_dep, lib_sdl2 ],")
-    replace_if_present("src/d3d9/meson.build", "vs_module_defs      : 'd3d9'+def_spec_ext,",
+    replace("src/d3d9/meson.build", "vs_module_defs      : 'd3d9'+def_spec_ext,",
                        "vs_module_defs      : 'd3d9'+def_spec_ext,\n  link_args           : ['-L' + get_option('android_sdl2_lib'), '-lSDL2'],")
-    replace_if_present("src/dxvk/meson.build", "dependencies        : [ thread_dep, vkcommon_dep ] + dxvk_extradep,",
+    replace("src/dxvk/meson.build", "dependencies        : [ thread_dep, vkcommon_dep ] + dxvk_extradep,",
                        "dependencies        : [ thread_dep, vkcommon_dep, lib_sdl2 ] + dxvk_extradep,")
-    replace_if_present("src/dxvk/platform/dxvk_sdl2_exts.cpp",
+    replace("src/dxvk/platform/dxvk_sdl2_exts.cpp",
                        "namespace dxvk {\n\n  DxvkPlatformExts DxvkPlatformExts::s_instance;",
                        "namespace dxvk {\n\n#if defined(__ANDROID__)\n  static SDL_Window* s_androidWindow = nullptr;\n\n  extern \"C\" void dxvkSetSdl2Window(SDL_Window* window) {\n    s_androidWindow = window;\n  }\n#endif\n\n  DxvkPlatformExts DxvkPlatformExts::s_instance;")
-    replace_if_present("src/dxvk/platform/dxvk_sdl2_exts.cpp",
+    replace("src/dxvk/platform/dxvk_sdl2_exts.cpp",
                        '''    SDL_Window* window = SDL_CreateWindow(
       "Dummy Window",
       SDL_WINDOWPOS_UNDEFINED,
@@ -236,16 +254,13 @@ else:
       1, 1,
       SDL_WINDOW_HIDDEN | SDL_WINDOW_VULKAN);
 #endif''')
-    replace_if_present("src/dxvk/platform/dxvk_sdl2_exts.cpp",
+    replace("src/dxvk/platform/dxvk_sdl2_exts.cpp",
                        "    SDL_DestroyWindow(window);\n\n    return names;",
                        "#if !defined(__ANDROID__)\n    SDL_DestroyWindow(window);\n#endif\n\n    return names;")
-    replace_if_present("src/d3d9/d3d9_main.cpp",
-                       "#include <cstdio>\n\n#include \"../dxvk/dxvk_instance.h\"",
-                       "#include <cstdio>\n\n#include \"../dxvk/dxvk_instance.h\"")
-    replace_if_present("src/d3d9/d3d9_main.cpp",
+    replace("src/d3d9/d3d9_main.cpp",
                        "#include \"../dxvk/dxvk_instance.h\"",
                        "#include <cstdio>\n#include \"../dxvk/dxvk_instance.h\"")
-    replace_if_present("src/d3d9/d3d9_main.cpp",
+    replace("src/d3d9/d3d9_main.cpp",
                        """    dxvk::CreateD3D9(false, &pDirect3D);
 
     return pDirect3D;""",
@@ -264,10 +279,10 @@ else:
     for feature in ("depthClamp", "depthBiasClamp", "fillModeNonSolid",
                     "sampleRateShading", "shaderClipDistance",
                     "textureCompressionBC", "multiViewport", "independentBlend"):
-        replace_if_present("src/d3d9/d3d9_device.cpp",
+        replace("src/d3d9/d3d9_device.cpp",
                            "enabled.core.features.%s = VK_TRUE;" % feature,
                            "enabled.core.features.%s = supported.core.features.%s;" % (feature, feature))
-    replace_if_present("src/d3d9/d3d9_device.cpp", "DxvkDeviceFeatures enabled = {};",
+    replace("src/d3d9/d3d9_device.cpp", "DxvkDeviceFeatures enabled = {};",
                        """DxvkDeviceFeatures enabled = {};
     if (!supported.core.features.shaderInt64) Logger::warn(\"Android DXVK v1 missing feature: shaderInt64\");
     if (!supported.core.features.textureCompressionBC) Logger::warn(\"Android DXVK v1 missing feature: textureCompressionBC\");
@@ -275,8 +290,6 @@ else:
     if (!supported.core.features.multiViewport) Logger::warn(\"Android DXVK v1 missing feature: multiViewport\");
     if (!supported.core.features.shaderClipDistance) Logger::warn(\"Android DXVK v1 missing feature: shaderClipDistance\");
     if (!supported.core.features.shaderCullDistance) Logger::warn(\"Android DXVK v1 missing feature: shaderCullDistance\");""")
-    replace_if_present("meson.build", "if dxvk_compiler.has_link_argument('-Wl,--file-alignment=4096'):",
-                       "if target_machine.system() != 'android' and dxvk_compiler.has_link_argument('-Wl,--file-alignment=4096'):")
     write_if_missing("src/util/platform/util_env_android.cpp", r'''#include "../util_env.h"
 
 #include <cerrno>
@@ -357,8 +370,16 @@ LUID GetAdapterLUID(UINT) {
 }
 }
 ''')
-    replace_if_present("src/util/meson.build", "elif dxvk_platform == 'darwin'\n  util_src += util_src_darwin\nelse",
+    replace("src/util/meson.build", "elif dxvk_platform == 'darwin'\n  util_src += util_src_darwin\nelse",
                        "elif dxvk_platform == 'darwin'\n  util_src += util_src_darwin\nelif dxvk_platform == 'android'\n  util_src += ['platform/util_env_android.cpp', 'platform/util_string_android.cpp', 'platform/util_luid_android.cpp', 'platform/thread_native.cpp']\nelse")
     # The old fork has no android_sdl2_include option; add one for the SDL
     # headers supplied by the application and use it in its native dependency.
-    replace_if_present("meson_options.txt", "option('enable_tests',", "option('android_sdl2_include', type: 'string', value: '')\noption('android_sdl2_lib', type: 'string', value: '')\noption('enable_tests',")
+    replace("meson_options.txt", "option('enable_tests',", "option('android_sdl2_include', type: 'string', value: '')\noption('android_sdl2_lib', type: 'string', value: '')\noption('enable_tests',")
+
+
+if variant == "v2":
+    patch_v2()
+elif variant == "native":
+    patch_v1()
+else:
+    raise ValueError(f"Unknown DXVK variant: {variant!r}")
