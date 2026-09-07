@@ -125,8 +125,7 @@ internal class GameLaunchOptionsEditor(
             row.addView(label(spec.title, 16f).apply { setTypeface(typeface, Typeface.BOLD) })
             when (spec.kind) {
                 Kind.CHOICE -> {
-                    val choices = listOf((spec.defaultChoiceValue ?: "") to spec.defaultChoiceLabel) + spec.choices +
-                        if (old != null && spec.choices.none { it.first == old }) listOf(old to "Saved value: $old") else emptyList()
+                    val choices = listOf((spec.defaultChoiceValue ?: "") to spec.defaultChoiceLabel) + spec.choices
                     val selector = Spinner(activity).apply {
                         adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_item, choices.map { it.second }).apply {
                             setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
