@@ -17,7 +17,12 @@ class GameLaunchOptions(context: Context) {
         // SDL passes each array entry as one argument, so spaces need no shell quoting
         // RunBackground is an engine focus policy: with 0, a focus-loss event
         // stops engine update/render quantization and pauses the network client.
-        val defaults = listOf("content=$contentPath", "RunBackground=0")
+        val defaults = listOf(
+            "content=$contentPath",
+            "FullScreen=1",
+            "VSync=1",
+            "RunBackground=0"
+        )
         return (custom + defaults.filter { it.substringBefore('=') !in keys }).toTypedArray()
     }
 
