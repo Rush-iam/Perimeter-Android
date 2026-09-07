@@ -20,6 +20,29 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
+                providers.gradleProperty("androidDxvk").orNull?.takeIf { it.isNotBlank() }?.let {
+                    arguments += "-DPERIMETER_ANDROID_DXVK=$it"
+                }
+                for ((property, variable) in mapOf(
+                    "dxvkPython" to "ANDROID_DXVK_PYTHON",
+                    "dxvkMeson" to "ANDROID_DXVK_MESON",
+                    "dxvkGlslang" to "ANDROID_DXVK_GLSLANG",
+                    "dxvkSource" to "FETCHCONTENT_SOURCE_DIR_ANDROID_DXVK_SOURCE",
+                    "dxvkSdlSource" to "FETCHCONTENT_SOURCE_DIR_SDL2",
+                    "dxvkSdlNetSource" to "FETCHCONTENT_SOURCE_DIR_SDL2_NET",
+                    "dxvkSdlMixerSource" to "FETCHCONTENT_SOURCE_DIR_SDL2_MIXER",
+                    "dxvkSdlImageSource" to "FETCHCONTENT_SOURCE_DIR_SDL2_IMAGE",
+                    "ffmpegSource" to "FETCHCONTENT_SOURCE_DIR_FFMPEG_PREBUILT",
+                    "simpleiniSource" to "FETCHCONTENT_SOURCE_DIR_SIMPLEINI",
+                    "peventsSource" to "FETCHCONTENT_SOURCE_DIR_PEVENTS",
+                    "gameMathSource" to "FETCHCONTENT_SOURCE_DIR_GAMEMATH",
+                    "imguiSource" to "FETCHCONTENT_SOURCE_DIR_IMGUI",
+                    "sokolSource" to "FETCHCONTENT_SOURCE_DIR_SOKOL"
+                )) {
+                    providers.gradleProperty(property).orNull?.takeIf { it.isNotBlank() }?.let {
+                        arguments += "-D$variable=${rootProject.file(it).invariantSeparatorsPath}"
+                    }
+                }
             }
         }
     }
@@ -28,6 +51,29 @@ android {
         release {
             optimization {
                 enable = false
+            }
+        }
+    }
+    flavorDimensions += "renderer"
+    productFlavors {
+        create("sokolDxvk1") {
+            dimension = "renderer"
+            buildConfigField("String", "DXVK_VERSION", "\"1\"")
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DPERIMETER_ANDROID_DXVK=ON"
+                    arguments += "-DPERIMETER_ANDROID_DXVK_VERSION=1"
+                }
+            }
+        }
+        create("sokolDxvk2") {
+            dimension = "renderer"
+            buildConfigField("String", "DXVK_VERSION", "\"2\"")
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DPERIMETER_ANDROID_DXVK=ON"
+                    arguments += "-DPERIMETER_ANDROID_DXVK_VERSION=2"
+                }
             }
         }
     }
@@ -42,6 +88,7 @@ android {
         }
     }
     buildFeatures {
+        buildConfig = true
         viewBinding = true
     }
 }

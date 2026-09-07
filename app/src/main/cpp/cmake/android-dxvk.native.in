@@ -1,0 +1,4 @@
+[binaries]
+glslang = '@ANDROID_DXVK_GLSLANG@'
+glslangValidator = '@ANDROID_DXVK_GLSLANG@'
+touch = ['@ANDROID_DXVK_PYTHON@', '@CMAKE_CURRENT_FUNCTION_LIST_DIR@/dxvk_touch.py']

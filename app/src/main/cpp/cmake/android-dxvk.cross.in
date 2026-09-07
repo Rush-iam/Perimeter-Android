@@ -1,0 +1,20 @@
+[binaries]
+c = ['@CMAKE_C_COMPILER@', '--target=@CMAKE_C_COMPILER_TARGET@', '--sysroot=@CMAKE_SYSROOT@']
+cpp = ['@CMAKE_CXX_COMPILER@', '--target=@CMAKE_CXX_COMPILER_TARGET@', '--sysroot=@CMAKE_SYSROOT@']
+ar = '@CMAKE_AR@'
+strip = '@CMAKE_STRIP@'
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
+
+[properties]
+needs_exe_wrapper = true
+
+[built-in options]
+c_args = ['-fPIC']
+cpp_args = ['-fPIC']
+c_link_args = ['-Wl,-z,max-page-size=16384']
+cpp_link_args = ['-Wl,-z,max-page-size=16384', '-lc++_shared']

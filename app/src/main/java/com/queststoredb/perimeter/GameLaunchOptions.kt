@@ -15,7 +15,9 @@ class GameLaunchOptions(context: Context) {
         val custom = parse(load())
         val keys = custom.map { it.removePrefix("tmp_").substringBefore('=') }.toSet()
         // SDL passes each array entry as one argument, so spaces need no shell quoting
-        val defaults = listOf("content=$contentPath")
+        // RunBackground is an engine focus policy: with 0, a focus-loss event
+        // stops engine update/render quantization and pauses the network client.
+        val defaults = listOf("content=$contentPath", "RunBackground=0")
         return (custom + defaults.filter { it.substringBefore('=') !in keys }).toTypedArray()
     }
 

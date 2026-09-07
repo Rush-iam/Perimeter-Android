@@ -25,4 +25,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Perimeter"
 include(":app")
- 
+include(":dxvkSmoke")

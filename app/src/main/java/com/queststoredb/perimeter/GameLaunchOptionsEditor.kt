@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
+import java.io.File
 
 /** Edits a draft; only Save changes the persisted engine arguments. */
 internal class GameLaunchOptionsEditor(
@@ -89,6 +90,16 @@ internal class GameLaunchOptionsEditor(
     private fun addOption(parent: LinearLayout, spec: Option) {
         val row = column().apply { setPadding(dp(8), dp(12), dp(8), dp(16)) }
         parent.addView(row, fullWidth())
+        if (spec.kind == Kind.ACTION) {
+            row.addView(Button(activity).apply {
+                text = spec.title
+                isAllCaps = false
+                setOnClickListener { showLastLog() }
+            }, fullWidth())
+            if (spec.description.isNotEmpty()) row.addView(label(spec.description, 13f))
+            parent.addView(View(activity).apply { setBackgroundColor(0x33888888) }, LinearLayout.LayoutParams(-1, dp(1)))
+            return
+        }
         val old = saved[spec.key]?.substringAfter('=')
         if (spec.kind == Kind.FLAG || spec.kind == Kind.TOGGLE || spec.kind == Kind.INVERTED_BOOLEAN) {
             val checkbox = CheckBox(activity).apply {
@@ -114,7 +125,7 @@ internal class GameLaunchOptionsEditor(
             row.addView(label(spec.title, 16f).apply { setTypeface(typeface, Typeface.BOLD) })
             when (spec.kind) {
                 Kind.CHOICE -> {
-                    val choices = listOf("" to spec.defaultChoiceLabel) + spec.choices +
+                    val choices = listOf((spec.defaultChoiceValue ?: "") to spec.defaultChoiceLabel) + spec.choices +
                         if (old != null && spec.choices.none { it.first == old }) listOf(old to "Saved value: $old") else emptyList()
                     val selector = Spinner(activity).apply {
                         adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_item, choices.map { it.second }).apply {
@@ -124,7 +135,7 @@ internal class GameLaunchOptionsEditor(
                         setSelection(if (old == null) 0 else choices.indexOfFirst { it.first == old }.coerceAtLeast(0))
                     }
                     row.addView(selector, fullWidth())
-                    readers[spec.key] = { if (selector.selectedItemPosition == 0) null else choices[selector.selectedItemPosition].first }
+                    readers[spec.key] = { choices[selector.selectedItemPosition].first.ifEmpty { null } }
                     resetters += { selector.setSelection(0) }
                 }
                 else -> {
@@ -154,15 +165,49 @@ internal class GameLaunchOptionsEditor(
         parent.addView(View(activity).apply { setBackgroundColor(0x33888888) }, LinearLayout.LayoutParams(-1, dp(1)))
     }
 
+    private fun showLastLog() {
+        try {
+            // SDL_GetPrefPath() maps to the app's internal files directory on Android.
+            val log = File(activity.filesDir, "logfile.txt")
+            check(log.isFile) { "No logfile.txt was found at ${log.path}." }
+            val text = log.inputStream().bufferedReader().use { reader ->
+                val contents = reader.readText()
+                if (contents.length > MAX_LOG_CHARACTERS) {
+                    contents.take(MAX_LOG_CHARACTERS) + "\n\n[Log truncated]"
+                } else {
+                    contents
+                }
+            }
+            val logView = TextView(activity).apply {
+                setTextIsSelectable(true)
+                typeface = Typeface.MONOSPACE
+                this.text = if (text.isEmpty()) "[Log is empty]" else text
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+            }
+            AlertDialog.Builder(activity)
+                .setTitle("Last log: ${log.name}")
+                .setView(ScrollView(activity).apply { addView(logView) })
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        } catch (error: Exception) {
+            AlertDialog.Builder(activity)
+                .setTitle("Last log")
+                .setMessage(error.localizedMessage ?: "Unable to read the last log.")
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
+    }
+
     private fun column() = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
     private fun label(value: String, size: Float) = TextView(activity).apply { text = value; textSize = size }
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
     private fun fullWidth() = LinearLayout.LayoutParams(-1, -2)
 
-    private enum class Kind { FLAG, TOGGLE, INVERTED_BOOLEAN, CHOICE, TEXT, PASSWORD }
+    private enum class Kind { FLAG, TOGGLE, INVERTED_BOOLEAN, CHOICE, TEXT, PASSWORD, ACTION }
     private data class Option(val section: String, val key: String, val title: String, val kind: Kind,
                               val description: String = "", val choices: List<Pair<String, String>> = emptyList(),
-                              val defaultChoiceLabel: String = "Game default", val valueHint: String? = "Game default")
+                              val defaultChoiceLabel: String = "Game default", val valueHint: String? = "Game default",
+                              val defaultChoiceValue: String? = null)
 
     private companion object {
         val specs = listOf(
@@ -177,6 +222,9 @@ internal class GameLaunchOptionsEditor(
             Option("Gameplay & startup", "pause", "Start paused", Kind.FLAG),
             Option("Gameplay & startup", "autoSwitchAI", "Autoswitch controls to AI when idle", Kind.FLAG,
                 "After 60 seconds without player input, the active human player becomes AI-controlled. Player input switches control back and resets the timer."),
+            Option("Display & performance", "graph", "Graphics backend", Kind.CHOICE, choices = listOf(
+                "sokol" to "Sokol / GLES3"),
+                defaultChoiceLabel = "DXVK ${BuildConfig.DXVK_VERSION}.x", defaultChoiceValue = "d3d9"),
             Option("Display & performance", "show_fps", "Show FPS counter", Kind.TOGGLE),
             Option("Display & performance", "HT", "Disable multithreading", Kind.INVERTED_BOOLEAN),
             Option("Replays", "saveplay", "Record replay to file", Kind.TEXT, valueHint = null),
@@ -193,7 +241,9 @@ internal class GameLaunchOptionsEditor(
                 "By default, hosted games are private and listen only on their port."),
             Option("Multiplayer", "netrelay", "Relay server", Kind.TEXT),
             Option("Multiplayer", "ServerArchMask", "Architecture compatibility mask", Kind.TEXT, "Hexadecimal mask, such as FFFE."),
-            Option("Diagnostics", "console", "Redirect logs to Logcat instead of file", Kind.FLAG),
+            Option("Diagnostics", "read_log_file", "Open last log file", Kind.ACTION),
+            Option("Diagnostics", "console", "Redirect logs to Logcat instead of file", Kind.FLAG,
+                "The log file is not created when enabled."),
             Option("Diagnostics", "content_debug", "Log content loading", Kind.FLAG),
             Option("Diagnostics", "content_dump_debug", "Export content file mapping", Kind.FLAG),
             Option("Diagnostics", "debug_key_handler", "Enable debug keyboard commands", Kind.FLAG),
@@ -205,5 +255,7 @@ internal class GameLaunchOptionsEditor(
             Option("Diagnostics", "stack_frames", "Decode crash addresses", Kind.TEXT, "Comma-separated hexadecimal addresses. Decodes the trace, then exits.", valueHint = null),
             Option("Diagnostics", "stack_reference", "Crash reference address", Kind.TEXT, "Hexadecimal reference address from the same crash.", valueHint = null)
         )
+
+        const val MAX_LOG_CHARACTERS = 512 * 1024
     }
 }

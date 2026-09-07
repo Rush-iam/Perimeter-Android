@@ -4,16 +4,17 @@ project("perimeter_android")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(FetchContent)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
 
 set(PERIMETER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../Perimeter")
 set(PERIMETER_SOURCE_DIR "${PERIMETER_ROOT}/Source")
 add_definitions(-DPERIMETER_VERSION="3.1.11")
 add_definitions(-D_PERIMETER_)
 
-# Configure core project options for Android
-# TODO: Enable D3D9 via DXVK
-set(OPTION_D3D9 OFF CACHE BOOL "" FORCE)
-# TODO: Fix failed build when movies are disabled
+# Configure core project options for Android. DXVK is the preferred default
+# for hardware with Vulkan support; Sokol remains available as a fallback.
+option(PERIMETER_ANDROID_DXVK "Build the Android DXVK D3D9 renderer" ON)
 set(OPTION_FFMPEG_MOVIES ON CACHE BOOL "" FORCE)
 set(OPTION_DISABLE_STACKTRACE OFF CACHE BOOL "" FORCE)
 set(OPTION_SOKOL ON CACHE BOOL "" FORCE)
@@ -23,9 +24,6 @@ set(OPTION_SOKOL_API "GLES3" CACHE STRING "" FORCE)
 # On Android, 'GL' (desktop) doesn't exist, we use GLESv3
 add_library(GL INTERFACE)
 target_link_libraries(GL INTERFACE GLESv3)
-
-# SDL2 FetchContent for Android
-include(FetchContent)
 
 # XTool uses Boost.Stacktrace header-only; compile it with the Android toolchain
 # rather than depending on ABI-specific Boost binaries. Keep the complete header
@@ -76,6 +74,15 @@ set(SDL2_MIXER_OPUS OFF CACHE BOOL "" FORCE)
 set(SDL2_MIXER_FLAC OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(SDL2 SDL2_net SDL2_mixer SDL2_image)
+
+if(PERIMETER_ANDROID_DXVK)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDxvk.cmake")
+    android_add_dxvk("${sdl2_SOURCE_DIR}/include")
+    set(PERIMETER_DXVK_D3D9_TARGET AndroidDxvk::D3D9)
+    set(OPTION_D3D9 ON CACHE BOOL "" FORCE)
+else()
+    set(OPTION_D3D9 OFF CACHE BOOL "" FORCE)
+endif()
 
 # FFmpeg Prebuilts for Android
 FetchContent_Declare(

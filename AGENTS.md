@@ -34,4 +34,5 @@
 ## Architecture Notes
 - The engine is integrated as a library via `add_subdirectory(${PERIMETER_ROOT})` in the native `CMakeLists.txt`.
 - Native dependencies (SDL2, SDL2_net, SDL2_mixer, SDL2_image, FFmpeg) are managed via `FetchContent` in CMake.
+- Builds must not require or default to tools, sources, or caches under `.artifacts`; use host-installed tools, CMake/FetchContent fallbacks, or explicitly supplied external paths instead.
 - Avoid tight coupling between the Android Activity and the Engine logic to facilitate the future Quest 3 (VR) port.
