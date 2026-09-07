@@ -14,10 +14,13 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:appCategory="game"
         android:theme="@style/Theme.Perimeter">
         <activity
             android:name=".MainActivity"
             android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.game"
+            android:launchMode="singleTask"
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode" />
         <activity

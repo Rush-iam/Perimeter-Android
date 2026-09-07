@@ -161,8 +161,13 @@ class ContentActivity : Activity() {
     private fun startGameIfReady() {
         try {
             storage.localFilesystemPath() ?: error(getString(storageAccessMessage()))
-            startActivity(Intent(this, MainActivity::class.java))
-            finish()
+            // Meta Quest assigns panel bounds when a task is created.  Launching the game in
+            // its own task lets its landscape Activity be the task root instead of
+            // inheriting this setup screen's portrait panel.
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            finishAndRemoveTask()
         } catch (error: Exception) {
             status.text = getString(R.string.content_error, error.localizedMessage)
         }
