@@ -58,35 +58,48 @@ def write_if_missing(relative_path, content):
 
 
 def patch_v2():
-    """Patch the current DXVK 2.x source."""
-    # Android loads SDL2 from the application package.
+    """Apply the seven minimal Android changes to clean pinned DXVK 2.7.1."""
+    # Android packages SDL2 as libSDL2.so rather than a desktop SONAME.
     replace("src/wsi/sdl2/wsi_platform_sdl2.cpp",
             '#elif defined(__APPLE__)',
             '#elif defined(__ANDROID__)\n        "libSDL2.so"\n#elif defined(__APPLE__)')
-    # Meson cross-compilation tools run on the build host, not the Android target.
+    # DXVK's SDL2 WSI dynamically resolves symbols, so only the matching app
+    # headers are needed at compile time.
     replace("meson_options.txt", "option('enable_dxgi',",
-                       "option('android_sdl2_include', type: 'string', value: '', description: 'Android SDL2 headers')\noption('enable_dxgi',")
-    replace("meson.build", "find_program('touch')",
-                       "find_program('touch', native: true)")
-    replace("meson.build", "find_program('glslang', 'glslangValidator')",
-                       "find_program('glslang', 'glslangValidator', native: true)")
-    # SDL2 WSI resolves functions dynamically; compile against the app's headers.
+            "option('android_sdl2_include', type: 'string', value: '', description: 'Android SDL2 headers')\noption('enable_dxgi',")
     replace("meson.build",
-                       "  lib_sdl2 = dependency('sdl2', required: get_option('native_sdl2'))",
-                       """  if platform == 'android'
+            "  lib_sdl2 = dependency('sdl2', required: get_option('native_sdl2'))",
+            """  if platform == 'android'
     assert(get_option('android_sdl2_include') != '', 'Android SDL2 headers required')
     lib_sdl2 = declare_dependency(compile_args: ['-I' + get_option('android_sdl2_include')])
   else
     lib_sdl2 = dependency('sdl2', required: get_option('native_sdl2'))
   endif""")
-    # APK libraries use unversioned SONAMEs and the application's shared libc++.
-    replace("meson.build",
-                       "  link_args += [\n    '-static-libgcc',\n    '-static-libstdc++',\n  ]",
-                       """  if platform == 'android'
+    # The resource and shader generators execute on the host during a cross build.
+    replace("meson.build", "find_program('touch')",
+            "find_program('touch', native: true)")
+    replace("meson.build", "find_program('glslang', 'glslangValidator')",
+            "find_program('glslang', 'glslangValidator', native: true)")
+    # Android uses the app's shared libc++ and unversioned ELF SONAMEs.
+    replace("meson.build", """  link_args += [
+    '-static-libgcc',
+    '-static-libstdc++',
+  ]""", """  if platform == 'android'
     dxvk_so_version = {}
   else
     link_args += ['-static-libgcc', '-static-libstdc++']
   endif""")
+    # DXVK's monolithic graphics-pipeline fallback does not use this extension.
+    # It remains required on desktop, while Android accepts adapters without it.
+    replace("src/dxvk/dxvk_device_info.cpp",
+            """      /* Dependency for graphics pipeline library */
+      ENABLE_EXT(khrPipelineLibrary, true),""",
+            """      /* Required only when the optional graphics-pipeline-library path is used. */
+#if defined(__ANDROID__)
+      ENABLE_EXT(khrPipelineLibrary, false),
+#else
+      ENABLE_EXT(khrPipelineLibrary, true),
+#endif""")
 
 
 def patch_v1():
