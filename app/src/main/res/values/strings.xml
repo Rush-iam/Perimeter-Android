@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Perimeter</string>
     <string name="content_instructions">Choose the game folder containing Perimeter.ini.</string>
+    <string name="build_note">Build %1$s-%2$s</string>
     <string name="choose_content">Choose game folder</string>
     <string name="play">Play</string>
     <string name="launch_arguments">Launch options</string>

@@ -23,16 +23,44 @@ android {
                 providers.gradleProperty("androidDxvk").orNull?.takeIf { it.isNotBlank() }?.let {
                     arguments += "-DPERIMETER_ANDROID_DXVK=$it"
                 }
+                val sharedDependencySourcesEnabled =
+                    !providers.gradleProperty("androidSharedDependencySources").orNull
+                        .equals("false", ignoreCase = true)
+                if (sharedDependencySourcesEnabled) {
+                    val sharedDependencySourceDir =
+                        providers.gradleProperty("androidDependencySourceDir").orNull
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let(rootProject::file)
+                            ?: gradle.gradleUserHomeDir.resolve("caches/perimeter-android/sources")
+                    arguments += "-DPERIMETER_ANDROID_DEPENDENCY_SOURCE_DIR=${sharedDependencySourceDir.invariantSeparatorsPath}"
+                } else {
+                    arguments += "-DPERIMETER_ANDROID_DEPENDENCY_SOURCE_DIR="
+                }
+                val compilerCacheMode = providers.gradleProperty("androidCompilerCache")
+                    .orNull?.takeIf { it.isNotBlank() } ?: "AUTO"
+                arguments += "-DANDROID_COMPILER_CACHE=$compilerCacheMode"
+                val compilerCacheDir = providers.gradleProperty("androidCompilerCacheDir").orNull
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(rootProject::file)
+                    ?: gradle.gradleUserHomeDir.resolve("caches/perimeter-android/compiler-cache")
+                arguments += "-DANDROID_COMPILER_CACHE_DIR=${compilerCacheDir.invariantSeparatorsPath}"
+                providers.gradleProperty("androidCompilerCacheExecutable").orNull
+                    ?.takeIf { it.isNotBlank() }?.let {
+                        arguments += "-DANDROID_COMPILER_CACHE_EXECUTABLE=${rootProject.file(it).invariantSeparatorsPath}"
+                    }
                 for ((property, variable) in mapOf(
                     "dxvkPython" to "ANDROID_DXVK_PYTHON",
                     "dxvkMeson" to "ANDROID_DXVK_MESON",
                     "dxvkGlslang" to "ANDROID_DXVK_GLSLANG",
+                    "boostSource" to "FETCHCONTENT_SOURCE_DIR_BOOST_HEADERS",
                     "dxvkSource" to "FETCHCONTENT_SOURCE_DIR_ANDROID_DXVK_SOURCE",
                     "dxvkSdlSource" to "FETCHCONTENT_SOURCE_DIR_SDL2",
                     "dxvkSdlNetSource" to "FETCHCONTENT_SOURCE_DIR_SDL2_NET",
                     "dxvkSdlMixerSource" to "FETCHCONTENT_SOURCE_DIR_SDL2_MIXER",
                     "dxvkSdlImageSource" to "FETCHCONTENT_SOURCE_DIR_SDL2_IMAGE",
                     "ffmpegSource" to "FETCHCONTENT_SOURCE_DIR_FFMPEG_PREBUILT",
+                    "mesonSource" to "FETCHCONTENT_SOURCE_DIR_MESON_SRC",
+                    "glslangSource" to "FETCHCONTENT_SOURCE_DIR_GLSLANG_BIN",
                     "simpleiniSource" to "FETCHCONTENT_SOURCE_DIR_SIMPLEINI",
                     "peventsSource" to "FETCHCONTENT_SOURCE_DIR_PEVENTS",
                     "gameMathSource" to "FETCHCONTENT_SOURCE_DIR_GAMEMATH",

@@ -1,0 +1,19 @@
+# Generated per Android ABI/configuration by AndroidDxvk.cmake.
+set(_meson_command "@_DXVK_MESON_COMMAND@")
+set(_meson_args "@android_dxvk_meson_args@")
+set(_binary_dir "@dxvk_build@/build")
+
+set(_command ${_meson_command} setup "${_binary_dir}"
+    "@android_dxvk_source_SOURCE_DIR@")
+if(EXISTS "${_binary_dir}/meson-private/coredata.dat")
+    list(APPEND _command --reconfigure)
+endif()
+list(APPEND _command
+    --cross-file "@dxvk_build@/android.cross"
+    --native-file "@dxvk_build@/host.native"
+    ${_meson_args})
+
+execute_process(
+    COMMAND "@CMAKE_COMMAND@" -E env "NINJA=@CMAKE_MAKE_PROGRAM@" ${_command}
+    COMMAND_ECHO STDOUT
+    COMMAND_ERROR_IS_FATAL ANY)

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -47,6 +48,11 @@ class ContentActivity : Activity() {
             setOnClickListener { showLaunchOptionsEditor() }
         })
         layout.addView(play)
+        layout.addView(TextView(this).apply {
+            text = getString(R.string.build_note, BuildConfig.VERSION_NAME, BuildConfig.FLAVOR)
+            textSize = 12f
+            setTextColor(Color.GRAY)
+        })
         setContentView(ScrollView(this).apply { addView(layout) })
         refresh()
         if (savedInstanceState == null && Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
