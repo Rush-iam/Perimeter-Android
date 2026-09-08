@@ -56,7 +56,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private final float mTwoFingerTapSlop;
     private final float mTwoFingerZoomStep;
     private float mTwoFingerLastSpan;
-    private float mTwoFingerZoomRemainder;
     private static final long TWO_FINGER_DRAG_GRACE_PERIOD_MS = 100L;
     private boolean mTwoFingerDragActive;
     private boolean mPendingSingleTouch;
@@ -364,7 +363,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 mTwoFingerTapSecondY = event.getY(1);
                 mTwoFingerTapStartTime = event.getEventTime();
                 mTwoFingerLastSpan = twoFingerSpan(event, 0, 1);
-                mTwoFingerZoomRemainder = 0.0f;
             } else {
                 mTwoFingerTapCandidate = false;
                 resetTwoFingerZoom();
@@ -464,27 +462,16 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
     private void updateTwoFingerZoom(MotionEvent event, int firstIndex, int secondIndex) {
         float span = twoFingerSpan(event, firstIndex, secondIndex);
-        mTwoFingerZoomRemainder += span - mTwoFingerLastSpan;
+        float spanDelta = span - mTwoFingerLastSpan;
         mTwoFingerLastSpan = span;
-
-        int wheelTicks = (int) (mTwoFingerZoomRemainder / mTwoFingerZoomStep);
-        if (wheelTicks == 0) {
+        float zoomDelta = spanDelta / mTwoFingerZoomStep;
+        if (zoomDelta == 0.0f) {
             return;
         }
-        mTwoFingerZoomRemainder -= wheelTicks * mTwoFingerZoomStep;
 
-        /*
-         * The pan gesture holds the engine's map-move modifier, which normally
-         * ignores mouse-wheel zoom. Release it only for this SDL wheel event,
-         * then restore it so pinch and two-finger panning can be combined.
-         */
-        if (mTwoFingerDragActive) {
-            SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_GRAVE);
-        }
-        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_SCROLL, 0.0f, wheelTicks, false);
-        if (mTwoFingerDragActive) {
-            SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_GRAVE);
-        }
+        // SDL retains this fractional value in SDL_MouseWheelEvent.preciseY.
+        // One mTwoFingerZoomStep still equals the former one-wheel-tick speed.
+        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_SCROLL, 0.0f, zoomDelta, false);
     }
 
     private float twoFingerSpan(MotionEvent event, int firstIndex, int secondIndex) {
@@ -495,7 +482,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
     private void resetTwoFingerZoom() {
         mTwoFingerLastSpan = 0.0f;
-        mTwoFingerZoomRemainder = 0.0f;
     }
 
     /*
