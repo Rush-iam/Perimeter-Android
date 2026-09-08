@@ -54,6 +54,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private float mTwoFingerTapSecondY;
     private long mTwoFingerTapStartTime;
     private final float mTwoFingerTapSlop;
+    private final float mTwoFingerZoomStep;
+    private float mTwoFingerLastSpan;
+    private float mTwoFingerZoomRemainder;
     private static final long TWO_FINGER_DRAG_GRACE_PERIOD_MS = 100L;
     private boolean mTwoFingerDragActive;
     private boolean mPendingSingleTouch;
@@ -86,6 +89,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mHeight = 1.0f;
 
         mTwoFingerTapSlop = ViewConfiguration.get(context).getScaledTouchSlop() * 0.5f;
+        // Require a deliberate change in finger separation for each wheel tick.
+        // This filters natural jitter while retaining a responsive pinch gesture.
+        mTwoFingerZoomStep = ViewConfiguration.get(context).getScaledTouchSlop() * 2.0f;
 
         mIsSurfaceReady = false;
     }
@@ -357,8 +363,11 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 mTwoFingerTapSecondX = event.getX(1);
                 mTwoFingerTapSecondY = event.getY(1);
                 mTwoFingerTapStartTime = event.getEventTime();
+                mTwoFingerLastSpan = twoFingerSpan(event, 0, 1);
+                mTwoFingerZoomRemainder = 0.0f;
             } else {
                 mTwoFingerTapCandidate = false;
+                resetTwoFingerZoom();
             }
             return false;
         }
@@ -372,6 +381,10 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                  action == MotionEvent.ACTION_CANCEL)) {
                 endTwoFingerDrag(event);
             }
+            if (action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP ||
+                action == MotionEvent.ACTION_CANCEL) {
+                resetTwoFingerZoom();
+            }
             return false;
         }
 
@@ -383,6 +396,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY)) {
                 mTwoFingerTapCandidate = false;
                 beginTwoFingerDrag(event, firstIndex, secondIndex);
+                updateTwoFingerZoom(event, firstIndex, secondIndex);
             }
             return false;
         }
@@ -395,12 +409,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                             !movedBeyondTapSlop(event, firstIndex, mTwoFingerTapFirstX, mTwoFingerTapFirstY) &&
                             !movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY);
             mTwoFingerTapCandidate = false;
+            resetTwoFingerZoom();
             return isTap;
         }
 
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL ||
             action == MotionEvent.ACTION_POINTER_UP) {
             mTwoFingerTapCandidate = false;
+            resetTwoFingerZoom();
         }
         return false;
     }
@@ -427,6 +443,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         float x = (event.getX(firstIndex) + event.getX(secondIndex)) * 0.5f;
         float y = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
         SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, false);
+        updateTwoFingerZoom(event, firstIndex, secondIndex);
     }
 
     private void endTwoFingerDrag(MotionEvent event) {
@@ -443,6 +460,42 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 : 0.0f;
         SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_GRAVE);
         mTwoFingerDragActive = false;
+    }
+
+    private void updateTwoFingerZoom(MotionEvent event, int firstIndex, int secondIndex) {
+        float span = twoFingerSpan(event, firstIndex, secondIndex);
+        mTwoFingerZoomRemainder += span - mTwoFingerLastSpan;
+        mTwoFingerLastSpan = span;
+
+        int wheelTicks = (int) (mTwoFingerZoomRemainder / mTwoFingerZoomStep);
+        if (wheelTicks == 0) {
+            return;
+        }
+        mTwoFingerZoomRemainder -= wheelTicks * mTwoFingerZoomStep;
+
+        /*
+         * The pan gesture holds the engine's map-move modifier, which normally
+         * ignores mouse-wheel zoom. Release it only for this SDL wheel event,
+         * then restore it so pinch and two-finger panning can be combined.
+         */
+        if (mTwoFingerDragActive) {
+            SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_GRAVE);
+        }
+        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_SCROLL, 0.0f, wheelTicks, false);
+        if (mTwoFingerDragActive) {
+            SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_GRAVE);
+        }
+    }
+
+    private float twoFingerSpan(MotionEvent event, int firstIndex, int secondIndex) {
+        float deltaX = event.getX(secondIndex) - event.getX(firstIndex);
+        float deltaY = event.getY(secondIndex) - event.getY(firstIndex);
+        return (float) Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    }
+
+    private void resetTwoFingerZoom() {
+        mTwoFingerLastSpan = 0.0f;
+        mTwoFingerZoomRemainder = 0.0f;
     }
 
     /*
