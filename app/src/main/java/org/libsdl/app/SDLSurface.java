@@ -54,6 +54,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private float mTwoFingerTapSecondY;
     private long mTwoFingerTapStartTime;
     private final float mTwoFingerTapSlop;
+    private static final long TWO_FINGER_DRAG_GRACE_PERIOD_MS = 100L;
+    private boolean mTwoFingerDragActive;
     private boolean mPendingSingleTouch;
     private boolean mSuppressTouchSequence;
     private int mPendingTouchDeviceId;
@@ -61,6 +63,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private float mPendingTouchX;
     private float mPendingTouchY;
     private float mPendingTouchPressure;
+    private long mPendingTouchDownTime;
 
     // Startup
     public SDLSurface(Context context) {
@@ -82,7 +85,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mWidth = 1.0f;
         mHeight = 1.0f;
 
-        mTwoFingerTapSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        mTwoFingerTapSlop = ViewConfiguration.get(context).getScaledTouchSlop() * 0.5f;
 
         mIsSurfaceReady = false;
     }
@@ -342,6 +345,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         final int action = event.getActionMasked();
 
         if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            if (mTwoFingerDragActive) {
+                endTwoFingerDrag(event);
+            }
             if (event.getPointerCount() == 2 && mPendingSingleTouch) {
                 mTwoFingerTapCandidate = true;
                 mTwoFingerTapFirstPointerId = event.getPointerId(0);
@@ -358,6 +364,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
 
         if (!mTwoFingerTapCandidate) {
+            if (mTwoFingerDragActive && action == MotionEvent.ACTION_MOVE) {
+                moveTwoFingerDrag(event);
+            }
+            if (mTwoFingerDragActive &&
+                (action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP ||
+                 action == MotionEvent.ACTION_CANCEL)) {
+                endTwoFingerDrag(event);
+            }
             return false;
         }
 
@@ -368,6 +382,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 movedBeyondTapSlop(event, firstIndex, mTwoFingerTapFirstX, mTwoFingerTapFirstY) ||
                 movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY)) {
                 mTwoFingerTapCandidate = false;
+                beginTwoFingerDrag(event, firstIndex, secondIndex);
             }
             return false;
         }
@@ -390,6 +405,46 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         return false;
     }
 
+    private void beginTwoFingerDrag(MotionEvent event, int firstIndex, int secondIndex) {
+        if (firstIndex < 0 || secondIndex < 0 || mTwoFingerDragActive) {
+            return;
+        }
+        float x = (event.getX(firstIndex) + event.getX(secondIndex)) * 0.5f;
+        float y = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
+        // Move first so the core captures the map anchor at the gesture midpoint.
+        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, false);
+        SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_GRAVE);
+        mTwoFingerDragActive = true;
+    }
+
+    private void moveTwoFingerDrag(MotionEvent event) {
+        int firstIndex = event.findPointerIndex(mTwoFingerTapFirstPointerId);
+        int secondIndex = event.findPointerIndex(mTwoFingerTapSecondPointerId);
+        if (firstIndex < 0 || secondIndex < 0) {
+            endTwoFingerDrag(event);
+            return;
+        }
+        float x = (event.getX(firstIndex) + event.getX(secondIndex)) * 0.5f;
+        float y = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
+        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, false);
+    }
+
+    private void endTwoFingerDrag(MotionEvent event) {
+        if (!mTwoFingerDragActive) {
+            return;
+        }
+        int firstIndex = event.findPointerIndex(mTwoFingerTapFirstPointerId);
+        int secondIndex = event.findPointerIndex(mTwoFingerTapSecondPointerId);
+        float x = firstIndex >= 0 && secondIndex >= 0
+                ? (event.getX(firstIndex) + event.getX(secondIndex)) * 0.5f
+                : 0.0f;
+        float y = firstIndex >= 0 && secondIndex >= 0
+                ? (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f
+                : 0.0f;
+        SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_GRAVE);
+        mTwoFingerDragActive = false;
+    }
+
     /*
      * SDL turns the first touchscreen finger into a primary mouse button. Hold
      * that down event until we know whether it stays a single-finger tap, so a
@@ -406,6 +461,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             mPendingTouchX = event.getX(0) / mWidth;
             mPendingTouchY = event.getY(0) / mHeight;
             mPendingTouchPressure = Math.min(event.getPressure(0), 1.0f);
+            mPendingTouchDownTime = event.getEventTime();
             return true;
         }
 
@@ -416,6 +472,10 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
 
         if (mPendingSingleTouch && action == MotionEvent.ACTION_MOVE) {
+            if (event.getEventTime() - mPendingTouchDownTime < TWO_FINGER_DRAG_GRACE_PERIOD_MS) {
+                // Give a second finger time to join before committing this to a one-finger drag.
+                return true;
+            }
             SDLActivity.onNativeTouch(mPendingTouchDeviceId, mPendingTouchPointerId,
                                       MotionEvent.ACTION_DOWN, mPendingTouchX,
                                       mPendingTouchY, mPendingTouchPressure);
