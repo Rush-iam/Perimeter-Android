@@ -18,6 +18,7 @@ import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
 
 
@@ -40,6 +41,27 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     // Is SurfaceView ready for rendering
     public boolean mIsSurfaceReady;
 
+    /*
+     * Touch screens do not report mouse secondary-button events.  Keep enough
+     * state to turn a short, stationary two-finger tap into one instead.
+     */
+    private boolean mTwoFingerTapCandidate;
+    private int mTwoFingerTapFirstPointerId;
+    private int mTwoFingerTapSecondPointerId;
+    private float mTwoFingerTapFirstX;
+    private float mTwoFingerTapFirstY;
+    private float mTwoFingerTapSecondX;
+    private float mTwoFingerTapSecondY;
+    private long mTwoFingerTapStartTime;
+    private final float mTwoFingerTapSlop;
+    private boolean mPendingSingleTouch;
+    private boolean mSuppressTouchSequence;
+    private int mPendingTouchDeviceId;
+    private int mPendingTouchPointerId;
+    private float mPendingTouchX;
+    private float mPendingTouchY;
+    private float mPendingTouchPressure;
+
     // Startup
     public SDLSurface(Context context) {
         super(context);
@@ -59,6 +81,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         // Some arbitrary defaults to avoid a potential division by zero
         mWidth = 1.0f;
         mHeight = 1.0f;
+
+        mTwoFingerTapSlop = ViewConfiguration.get(context).getScaledTouchSlop();
 
         mIsSurfaceReady = false;
     }
@@ -203,6 +227,12 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         int pointerFingerId;
         int i = -1;
         float x,y,p;
+        boolean emitTwoFingerRightClick = false;
+
+        if (event.getSource() != InputDevice.SOURCE_MOUSE &&
+            event.getSource() != (InputDevice.SOURCE_MOUSE | InputDevice.SOURCE_TOUCHSCREEN)) {
+            emitTwoFingerRightClick = updateTwoFingerTap(event);
+        }
 
         /*
          * Prevent id to be -1, since it's used in SDL internal for synthetic events
@@ -234,7 +264,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             y = motionListener.getEventY(event);
 
             SDLActivity.onNativeMouse(mouseButton, action, x, y, motionListener.inRelativeMode());
-        } else {
+        } else if (!shouldSuppressTouchEvent(event, touchDevId)) {
             switch(action) {
                 case MotionEvent.ACTION_MOVE:
                     for (i = 0; i < pointerCount; i++) {
@@ -295,8 +325,132 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             }
         }
 
+        if (emitTwoFingerRightClick) {
+            // Match the coordinates and button/action values used for a real mouse.
+            float clickX = (event.getX(0) + event.getX(1)) * 0.5f;
+            float clickY = (event.getY(0) + event.getY(1)) * 0.5f;
+            SDLActivity.onNativeMouse(MotionEvent.BUTTON_SECONDARY, MotionEvent.ACTION_DOWN,
+                                      clickX, clickY, false);
+            SDLActivity.onNativeMouse(0, MotionEvent.ACTION_UP,
+                                      clickX, clickY, false);
+        }
+
         return true;
    }
+
+    private boolean updateTwoFingerTap(MotionEvent event) {
+        final int action = event.getActionMasked();
+
+        if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            if (event.getPointerCount() == 2 && mPendingSingleTouch) {
+                mTwoFingerTapCandidate = true;
+                mTwoFingerTapFirstPointerId = event.getPointerId(0);
+                mTwoFingerTapSecondPointerId = event.getPointerId(1);
+                mTwoFingerTapFirstX = event.getX(0);
+                mTwoFingerTapFirstY = event.getY(0);
+                mTwoFingerTapSecondX = event.getX(1);
+                mTwoFingerTapSecondY = event.getY(1);
+                mTwoFingerTapStartTime = event.getEventTime();
+            } else {
+                mTwoFingerTapCandidate = false;
+            }
+            return false;
+        }
+
+        if (!mTwoFingerTapCandidate) {
+            return false;
+        }
+
+        if (action == MotionEvent.ACTION_MOVE) {
+            int firstIndex = event.findPointerIndex(mTwoFingerTapFirstPointerId);
+            int secondIndex = event.findPointerIndex(mTwoFingerTapSecondPointerId);
+            if (firstIndex < 0 || secondIndex < 0 ||
+                movedBeyondTapSlop(event, firstIndex, mTwoFingerTapFirstX, mTwoFingerTapFirstY) ||
+                movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY)) {
+                mTwoFingerTapCandidate = false;
+            }
+            return false;
+        }
+
+        if (action == MotionEvent.ACTION_POINTER_UP && event.getPointerCount() == 2) {
+            int firstIndex = event.findPointerIndex(mTwoFingerTapFirstPointerId);
+            int secondIndex = event.findPointerIndex(mTwoFingerTapSecondPointerId);
+            boolean isTap = event.getEventTime() - mTwoFingerTapStartTime <= ViewConfiguration.getDoubleTapTimeout() &&
+                            firstIndex >= 0 && secondIndex >= 0 &&
+                            !movedBeyondTapSlop(event, firstIndex, mTwoFingerTapFirstX, mTwoFingerTapFirstY) &&
+                            !movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY);
+            mTwoFingerTapCandidate = false;
+            return isTap;
+        }
+
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL ||
+            action == MotionEvent.ACTION_POINTER_UP) {
+            mTwoFingerTapCandidate = false;
+        }
+        return false;
+    }
+
+    /*
+     * SDL turns the first touchscreen finger into a primary mouse button. Hold
+     * that down event until we know whether it stays a single-finger tap, so a
+     * second finger can turn the entire gesture into a secondary click instead.
+     */
+    private boolean shouldSuppressTouchEvent(MotionEvent event, int touchDevId) {
+        final int action = event.getActionMasked();
+
+        if (action == MotionEvent.ACTION_DOWN) {
+            mPendingSingleTouch = true;
+            mSuppressTouchSequence = false;
+            mPendingTouchDeviceId = touchDevId;
+            mPendingTouchPointerId = event.getPointerId(0);
+            mPendingTouchX = event.getX(0) / mWidth;
+            mPendingTouchY = event.getY(0) / mHeight;
+            mPendingTouchPressure = Math.min(event.getPressure(0), 1.0f);
+            return true;
+        }
+
+        if (mPendingSingleTouch && action == MotionEvent.ACTION_POINTER_DOWN) {
+            mPendingSingleTouch = false;
+            mSuppressTouchSequence = true;
+            return true;
+        }
+
+        if (mPendingSingleTouch && action == MotionEvent.ACTION_MOVE) {
+            SDLActivity.onNativeTouch(mPendingTouchDeviceId, mPendingTouchPointerId,
+                                      MotionEvent.ACTION_DOWN, mPendingTouchX,
+                                      mPendingTouchY, mPendingTouchPressure);
+            mPendingSingleTouch = false;
+            return false;
+        }
+
+        if (mPendingSingleTouch && action == MotionEvent.ACTION_CANCEL) {
+            mPendingSingleTouch = false;
+            return true;
+        }
+
+        if (mPendingSingleTouch && action == MotionEvent.ACTION_UP) {
+            SDLActivity.onNativeTouch(mPendingTouchDeviceId, mPendingTouchPointerId,
+                                      MotionEvent.ACTION_DOWN, mPendingTouchX,
+                                      mPendingTouchY, mPendingTouchPressure);
+            mPendingSingleTouch = false;
+            return false;
+        }
+
+        if (mSuppressTouchSequence) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                mSuppressTouchSequence = false;
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean movedBeyondTapSlop(MotionEvent event, int pointerIndex, float startX, float startY) {
+        float deltaX = event.getX(pointerIndex) - startX;
+        float deltaY = event.getY(pointerIndex) - startY;
+        return deltaX * deltaX + deltaY * deltaY > mTwoFingerTapSlop * mTwoFingerTapSlop;
+    }
 
     // Sensor events
     public void enableSensor(int sensortype, boolean enabled) {

@@ -11,6 +11,19 @@ class GameLaunchOptions(context: Context) {
         preferences.edit().putString("arguments", text).apply()
     }
 
+    /** The renderer selected by launch arguments; D3D9/DXVK is the engine default. */
+    fun renderer(): String = parse(load())
+        .lastOrNull { it.removePrefix("tmp_").substringBefore('=') == "graph" }
+        ?.substringAfter('=')
+        ?: "d3d9"
+
+    /** Replaces the renderer argument without discarding unrelated launch options. */
+    fun selectRenderer(renderer: String) {
+        val arguments = parse(load())
+            .filterNot { it.removePrefix("tmp_").substringBefore('=') == "graph" }
+        save((arguments + "graph=$renderer").joinToString("\n"))
+    }
+
     fun arguments(contentPath: String): Array<String> {
         val custom = parse(load())
         val keys = custom.map { it.removePrefix("tmp_").substringBefore('=') }.toSet()

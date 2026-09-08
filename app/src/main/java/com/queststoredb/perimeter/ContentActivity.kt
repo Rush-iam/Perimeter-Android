@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -22,6 +23,7 @@ class ContentActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var choose: Button
     private lateinit var play: Button
+    private lateinit var buildNote: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,11 +50,12 @@ class ContentActivity : Activity() {
             setOnClickListener { showLaunchOptionsEditor() }
         })
         layout.addView(play)
-        layout.addView(TextView(this).apply {
-            text = getString(R.string.build_note, BuildConfig.VERSION_NAME, BuildConfig.FLAVOR)
+        buildNote = TextView(this).apply {
             textSize = 12f
             setTextColor(Color.GRAY)
-        })
+        }
+        layout.addView(buildNote)
+        refreshBuildNote()
         setContentView(ScrollView(this).apply { addView(layout) })
         refresh()
         if (savedInstanceState == null && Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
@@ -63,12 +66,27 @@ class ContentActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::storage.isInitialized) refresh()
+        if (::storage.isInitialized) {
+            refresh()
+            refreshBuildNote()
+        }
     }
 
     private fun showLaunchOptionsEditor() {
         val options = GameLaunchOptions(this)
-        GameLaunchOptionsEditor(this, options.load(), options::save).show()
+        GameLaunchOptionsEditor(this, options.load()) {
+            options.save(it)
+            refreshBuildNote()
+        }.show()
+    }
+
+    private fun refreshBuildNote() {
+        buildNote.text = getString(R.string.build_note, BuildConfig.VERSION_NAME, BuildConfig.FLAVOR) +
+            if (GameLaunchOptions(this).renderer() == "sokol") {
+                "\nwarning: legacy Sokol GLES3 renderer is selected, it is recommended to switch to DXVK"
+            } else {
+                ""
+            }
     }
 
     private fun chooseOrGrantAccess() {
@@ -167,6 +185,38 @@ class ContentActivity : Activity() {
     private fun startGameIfReady() {
         try {
             storage.localFilesystemPath() ?: error(getString(storageAccessMessage()))
+            if (requiresVulkan13ForDxvk() && !hasVulkan13Support()) {
+                showDxvk2UnsupportedDialog()
+                return
+            }
+            startGame()
+        } catch (error: Exception) {
+            status.text = getString(R.string.content_error, error.localizedMessage)
+        }
+    }
+
+    private fun requiresVulkan13ForDxvk(): Boolean =
+        BuildConfig.DXVK_VERSION == "2" && GameLaunchOptions(this).renderer() == "d3d9"
+
+    private fun hasVulkan13Support(): Boolean = packageManager.hasSystemFeature(
+        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
+        VULKAN_1_3_VERSION
+    )
+
+    private fun showDxvk2UnsupportedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dxvk2_vulkan_unsupported_title)
+            .setMessage(R.string.dxvk2_vulkan_unsupported_message)
+            .setPositiveButton(R.string.use_sokol_renderer) { _, _ ->
+                GameLaunchOptions(this).selectRenderer("sokol")
+                startGame()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun startGame() {
+        try {
             // Meta Quest assigns panel bounds when a task is created.  Launching the game in
             // its own task lets its landscape Activity be the task root instead of
             // inheriting this setup screen's portrait panel.
@@ -186,5 +236,7 @@ class ContentActivity : Activity() {
     private companion object {
         const val SELECT_CONTENT = 1
         const val REQUEST_STORAGE = 2
+        // VK_MAKE_API_VERSION(0, 1, 3, 0). PackageManager accepts Vulkan's encoded version.
+        const val VULKAN_1_3_VERSION = 0x00403000
     }
 }

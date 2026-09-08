@@ -31,6 +31,10 @@ internal class GameLaunchOptionsEditor(
     fun show() {
         val layout = column().apply { setPadding(dp(20), dp(8), dp(20), dp(24)) }
         for ((section, options) in specs.groupBy { it.section }) {
+            if (section.isEmpty()) {
+                options.forEach { addOption(layout, it) }
+                continue
+            }
             val body = column().apply { visibility = View.GONE }
             val heading = Button(activity).apply {
                 text = "$section  +"
@@ -210,11 +214,8 @@ internal class GameLaunchOptionsEditor(
 
     private companion object {
         val specs = listOf(
-            Option("Content & language", "content_select", "Game content", Kind.CHOICE, choices = listOf(
-                "PERIMETER" to "Perimeter", "PERIMETER_ET" to "Emperor’s Testament",
-                "PERIMETER|PERIMETER_ET" to "Both campaigns")),
-            Option("Content & language", "locale", "Language", Kind.CHOICE, choices = listOf(
-                "English" to "English", "Russian" to "Russian")),
+            Option("", "locale", "Game language", Kind.CHOICE, choices = listOf(
+                "English" to "English", "Russian" to "Russian"), defaultChoiceLabel = "Last used"),
             Option("Gameplay & startup", "start_splash", "Disable intro movies", Kind.INVERTED_BOOLEAN),
             Option("Gameplay & startup", "disable_sound", "Disable sound", Kind.FLAG),
             Option("Gameplay & startup", "disableBriefing", "Skip briefings", Kind.FLAG),

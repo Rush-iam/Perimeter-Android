@@ -138,18 +138,26 @@ set_target_properties(ffmpeg PROPERTIES
 add_subdirectory(${PERIMETER_ROOT} perimeter_engine EXCLUDE_FROM_ALL)
 
 # Core static libraries compile independently, so they cannot inherit SDL usage
-# requirements from the final perimeter shared-library link.  Keep those
+# requirements from the final perimeter shared-library link. Keep those
 # requirements scoped to the Android engine targets instead of restoring
-# wrapper-global include directories.
+# wrapper-global include directories. SDL 2 generates/copies its public headers
+# at build time; make every SDL consumer wait for that complete header set before
+# compiling, rather than merely before SDL itself links.
 add_library(perimeter_android_sdl INTERFACE)
 target_link_libraries(perimeter_android_sdl INTERFACE
         SDL2::SDL2
         SDL2_net::SDL2_net
         SDL2_mixer::SDL2_mixer
         SDL2_image::SDL2_image)
+# Keep the generated-header ordering edge in this directory. CMake's Ninja
+# generator otherwise weakens a cross-directory dependency on SDL's utility
+# target to a directory-level order-only edge for static-library objects.
+add_custom_target(perimeter_android_sdl_headers
+        DEPENDS sdl_headers_copy)
 foreach(_perimeter_android_sdl_consumer
         perimeter
         XTool
+        XPrmLib
         PluginMAX
         Terra
         tx3d
@@ -167,6 +175,8 @@ foreach(_perimeter_android_sdl_consumer
         Exodus)
     target_link_libraries(${_perimeter_android_sdl_consumer} PRIVATE
             perimeter_android_sdl)
+    add_dependencies(${_perimeter_android_sdl_consumer}
+            perimeter_android_sdl_headers)
 endforeach()
 unset(_perimeter_android_sdl_consumer)
 
