@@ -7,8 +7,12 @@ import android.view.KeyEvent
 import android.window.OnBackInvokedDispatcher
 import org.libsdl.app.SDL
 import org.libsdl.app.SDLActivity
+import org.libsdl.app.SDLSurface
 
 class MainActivity : SDLActivity() {
+    override fun createSDLSurface(context: android.content.Context): SDLSurface =
+        ScaledSDLSurface(context)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

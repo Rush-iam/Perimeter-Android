@@ -13,6 +13,7 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.ScrollView
 import android.view.View
@@ -49,6 +50,7 @@ class ContentActivity : Activity() {
             setText(R.string.launch_arguments)
             setOnClickListener { showLaunchOptionsEditor() }
         })
+        addResolutionScaleControl(layout)
         layout.addView(play)
         buildNote = TextView(this).apply {
             textSize = 12f
@@ -78,6 +80,35 @@ class ContentActivity : Activity() {
             options.save(it)
             refreshBuildNote()
         }.show()
+    }
+
+    private fun addResolutionScaleControl(layout: LinearLayout) {
+        val label = TextView(this)
+        val slider = SeekBar(this).apply {
+            max = ResolutionScale.percentages.lastIndex
+            progress = ResolutionScale.percentages.indexOf(ResolutionScale.load(this@ContentActivity))
+            contentDescription = getString(R.string.render_resolution)
+        }
+
+        fun updateLabel(progress: Int) {
+            val percent = ResolutionScale.percentages[progress]
+            val size = ResolutionScale.renderSize(this@ContentActivity, percent)
+            label.text = getString(R.string.render_resolution_value, percent, size.first, size.second)
+        }
+
+        updateLabel(slider.progress)
+        slider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                updateLabel(progress)
+                if (fromUser) ResolutionScale.save(this@ContentActivity,
+                    ResolutionScale.percentages[progress])
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
+        })
+        layout.addView(label)
+        layout.addView(slider)
     }
 
     private fun refreshBuildNote() {
