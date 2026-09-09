@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.22.1)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidCompilerCache.cmake")
 project("perimeter_android")
 
+find_package(games-frame-pacing REQUIRED CONFIG)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FetchContent)
@@ -137,6 +139,10 @@ set_target_properties(ffmpeg PROPERTIES
 # We use EXCLUDE_FROM_ALL to prevent building desktop targets not needed for Android
 add_subdirectory(${PERIMETER_ROOT} perimeter_engine EXCLUDE_FROM_ALL)
 
+# RenderSokol compiles independently from the final shared library and needs
+# Swappy's public headers while building its Android GLES presentation path.
+target_link_libraries(RenderSokol PRIVATE games-frame-pacing::swappy_static)
+
 # Core static libraries compile independently, so they cannot inherit SDL usage
 # requirements from the final perimeter shared-library link. Keep those
 # requirements scoped to the Android engine targets instead of restoring
@@ -192,5 +198,7 @@ target_link_libraries(
         SDL2_mixer::SDL2_mixer
         SDL2_image::SDL2_image
         ffmpeg
+        games-frame-pacing::swappy_static
         android
+        EGL
         log)

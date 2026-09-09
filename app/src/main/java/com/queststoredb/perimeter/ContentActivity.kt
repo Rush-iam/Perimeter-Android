@@ -12,6 +12,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -51,6 +52,7 @@ class ContentActivity : Activity() {
             setOnClickListener { showLaunchOptionsEditor() }
         })
         addResolutionScaleControl(layout)
+        addFrameRateLimitControl(layout)
         layout.addView(play)
         buildNote = TextView(this).apply {
             textSize = 12f
@@ -93,7 +95,7 @@ class ContentActivity : Activity() {
         fun updateLabel(progress: Int) {
             val percent = ResolutionScale.percentages[progress]
             val size = ResolutionScale.renderSize(this@ContentActivity, percent)
-            label.text = getString(R.string.render_resolution_value, percent, size.first, size.second)
+            label.text = getString(R.string.render_resolution_value, size.first, size.second)
         }
 
         updateLabel(slider.progress)
@@ -109,6 +111,19 @@ class ContentActivity : Activity() {
         })
         layout.addView(label)
         layout.addView(slider)
+    }
+
+    private fun addFrameRateLimitControl(layout: LinearLayout) {
+        layout.addView(CheckBox(this).apply {
+            text = getString(
+                R.string.limit_frame_rate_to,
+                FrameRateLimit.displayedFramesPerSecond(this@ContentActivity)
+            )
+            isChecked = FrameRateLimit.load(this@ContentActivity)
+            setOnCheckedChangeListener { _, checked ->
+                FrameRateLimit.save(this@ContentActivity, checked)
+            }
+        })
     }
 
     private fun refreshBuildNote() {

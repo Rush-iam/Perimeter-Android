@@ -5,8 +5,9 @@
     <string name="choose_content">Choose game folder</string>
     <string name="play">Play</string>
     <string name="launch_arguments">Launch options</string>
-    <string name="render_resolution">Render resolution</string>
-    <string name="render_resolution_value">Render resolution: %1$d%% (%2$d × %3$d)</string>
+    <string name="render_resolution">Resolution</string>
+    <string name="render_resolution_value">Resolution: %1$d × %2$d</string>
+    <string name="limit_frame_rate_to">Limit frame rate to %1$d FPS</string>
     <string name="save_launch_arguments">Save</string>
     <string name="checking_content">Checking game folder…</string>
     <string name="content_ready_path">Game folder: %1$s</string>

@@ -3,6 +3,7 @@ package com.queststoredb.perimeter
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.view.KeyEvent
 import android.window.OnBackInvokedDispatcher
 import org.libsdl.app.SDL
@@ -19,6 +20,16 @@ class MainActivity : SDLActivity() {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
             ) { sendEscapeClick() }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) {
+            // Perimeter's native globals are not safe to initialize more than once in a
+            // process. MainActivity runs in :game, so discard that process after SDL has
+            // joined its native thread and completed nativeQuit().
+            Process.killProcess(Process.myPid())
         }
     }
 
@@ -75,6 +86,14 @@ class MainActivity : SDLActivity() {
         val path = checkNotNull(storage.localFilesystemPath()) {
             "Grant all-files access and select the game folder before starting the engine"
         }
-        return GameLaunchOptions(this).arguments(path)
+        val limitToHalfRefresh = FrameRateLimit.load(this)
+        val arguments = GameLaunchOptions(this).arguments(path).filterNot {
+            val key = it.removePrefix("tmp_").substringBefore('=')
+            key == "android_vsync_interval" || key == "VSync"
+        }
+        return (arguments + listOfNotNull(
+            "android_vsync_interval=2".takeIf { limitToHalfRefresh },
+            "VSync=1"
+        )).toTypedArray()
     }
 }

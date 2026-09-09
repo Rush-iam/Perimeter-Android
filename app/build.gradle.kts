@@ -118,6 +118,7 @@ android {
     }
     buildFeatures {
         buildConfig = true
+        prefab = true
         viewBinding = true
     }
 }
@@ -126,5 +127,6 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.games.frame.pacing)
     implementation(libs.material)
 }

@@ -18,6 +18,7 @@
         android:theme="@style/Theme.Perimeter">
         <activity
             android:name=".MainActivity"
+            android:process=":game"
             android:screenOrientation="landscape"
             android:taskAffinity="${applicationId}.game"
             android:launchMode="singleTask"

@@ -4,12 +4,14 @@ coreKtx = "1.19.0"
 appcompat = "1.8.0"
 material = "1.14.0"
 constraintlayout = "2.2.2"
+gamesFramePacing = "2.1.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+androidx-games-frame-pacing = { group = "androidx.games", name = "games-frame-pacing", version.ref = "gamesFramePacing" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
