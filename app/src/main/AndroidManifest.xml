@@ -20,7 +20,6 @@
             android:name=".MainActivity"
             android:process=":game"
             android:screenOrientation="landscape"
-            android:taskAffinity="${applicationId}.game"
             android:launchMode="singleTask"
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode" />
