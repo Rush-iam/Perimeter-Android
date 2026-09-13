@@ -16,14 +16,24 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
-                providers.gradleProperty("dxvkVersion").orNull?.takeIf { it.isNotBlank() }?.let {
-                    arguments += "-DPERIMETER_ANDROID_DXVK_VERSION=$it"
+                val sharedDependencySourceDir =
+                    providers.gradleProperty("androidDependencySourceDir").orNull
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let(rootProject::file)
+                        ?: gradle.gradleUserHomeDir.resolve("caches/perimeter-android/sources")
+                arguments += "-DPERIMETER_ANDROID_DEPENDENCY_SOURCE_DIR=${sharedDependencySourceDir.invariantSeparatorsPath}"
+                providers.gradleProperty("dxvkPython").orNull?.takeIf { it.isNotBlank() }?.let {
+                    arguments += "-DANDROID_DXVK_PYTHON=${rootProject.file(it).invariantSeparatorsPath}"
+                }
+                providers.gradleProperty("dxvkMeson").orNull?.takeIf { it.isNotBlank() }?.let {
+                    arguments += "-DANDROID_DXVK_MESON=${rootProject.file(it).invariantSeparatorsPath}"
+                }
+                providers.gradleProperty("dxvkGlslang").orNull?.takeIf { it.isNotBlank() }?.let {
+                    arguments += "-DANDROID_DXVK_GLSLANG=${rootProject.file(it).invariantSeparatorsPath}"
                 }
                 for ((property, variable) in mapOf(
-                    "dxvkPython" to "ANDROID_DXVK_PYTHON",
-                    "dxvkMeson" to "ANDROID_DXVK_MESON",
-                    "dxvkGlslang" to "ANDROID_DXVK_GLSLANG",
-                    "dxvkSource" to "FETCHCONTENT_SOURCE_DIR_ANDROID_DXVK_SOURCE",
+                    "dxvk1Source" to "FETCHCONTENT_SOURCE_DIR_ANDROID_DXVK_SOURCE_V1",
+                    "dxvk2Source" to "FETCHCONTENT_SOURCE_DIR_ANDROID_DXVK_SOURCE_V2",
                     "dxvkSdlSource" to "FETCHCONTENT_SOURCE_DIR_SDL2"
                 )) {
                     providers.gradleProperty(property).orNull?.takeIf { it.isNotBlank() }?.let {
@@ -34,10 +44,17 @@ android {
         }
     }
     sourceSets.getByName("main").java.srcDir("../app/src/main/java/org/libsdl/app")
+    buildFeatures {
+        prefab = true
+    }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
         }
     }
+}
+
+dependencies {
+    implementation(libs.androidx.games.frame.pacing)
 }

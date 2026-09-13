@@ -6,6 +6,6 @@ import org.libsdl.app.SDLActivity;
 public class SmokeActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
-        return new String[] { "c++_shared", "SDL2", "dxvk_d3d9", "dxvk_smoke" };
+        return new String[] { "c++_shared", "SDL2", "dxvk_d3d9_v2", "dxvk_smoke" };
     }
 }
