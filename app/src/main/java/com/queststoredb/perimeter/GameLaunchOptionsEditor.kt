@@ -229,7 +229,8 @@ internal class GameLaunchOptionsEditor(
                 "After 60 seconds without player input, the active human player becomes AI-controlled. Player input switches control back and resets the timer."),
             Option("Display & performance", "graph", "Graphics backend", Kind.CHOICE, choices = listOf(
                 "sokol" to "Sokol / GLES3 legacy"),
-                defaultChoiceLabel = "DXVK ${BuildConfig.DXVK_VERSION}.x", defaultChoiceValue = "d3d9"),
+                defaultChoiceLabel = "DXVK ${BuildConfig.DXVK_VERSION}.x / Vulkan ${if (BuildConfig.DXVK_VERSION == "1") "1.1" else "1.3"}",
+                defaultChoiceValue = "d3d9"),
             Option("Display & performance", "show_fps", "Show FPS counter", Kind.TOGGLE),
             Option("Display & performance", "HT", "Disable multithreading", Kind.INVERTED_BOOLEAN),
             Option("Display & performance", "sustained_performance", "Android Sustained Performance Mode", Kind.TOGGLE,
