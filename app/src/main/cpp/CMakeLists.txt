@@ -106,7 +106,7 @@ perimeter_android_verify_git_revision(SDL2_image "${sdl2_image_SOURCE_DIR}"
 
 if(PERIMETER_ANDROID_DXVK)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDxvk.cmake")
-    android_add_dxvk("${sdl2_SOURCE_DIR}/include")
+    android_add_dxvk("${sdl2_SOURCE_DIR}/include" games-frame-pacing::swappy_static)
     set(PERIMETER_DXVK_D3D9_TARGET AndroidDxvk::D3D9)
     set(OPTION_D3D9 ON CACHE BOOL "" FORCE)
 else()

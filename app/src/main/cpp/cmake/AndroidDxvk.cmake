@@ -157,7 +157,7 @@ macro(_dxvk_ensure_host_tools)
 endmacro()
 
 # This target is deliberately independent of Perimeter's desktop DXVK builder.
-function(android_add_dxvk sdl_include_dir)
+function(android_add_dxvk sdl_include_dir swappy_target)
     if(NOT ANDROID OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
         message(FATAL_ERROR "Android DXVK currently supports only Android arm64-v8a")
     endif()
@@ -220,6 +220,14 @@ function(android_add_dxvk sdl_include_dir)
         set(android_dxvk_frontend_args)
         set(android_dxvk_component_args -Denable_d3d9=true -Denable_tests=false -Denable_dxgi=false -Denable_d3d10=false -Denable_d3d11=false)
         set(android_dxvk_sdl_lib_args "-Dandroid_sdl2_lib=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+        get_target_property(android_dxvk_swappy_include ${swappy_target} INTERFACE_INCLUDE_DIRECTORIES)
+        get_target_property(android_dxvk_swappy_lib ${swappy_target} IMPORTED_LOCATION)
+        if(NOT android_dxvk_swappy_include OR NOT android_dxvk_swappy_lib)
+            message(FATAL_ERROR "Android DXVK v1 requires the Swappy prefab include and library paths")
+        endif()
+        set(android_dxvk_swappy_args
+            "-Dandroid_swappy_include=${android_dxvk_swappy_include}"
+            "-Dandroid_swappy_lib=${android_dxvk_swappy_lib}")
     endif()
 
     set(android_dxvk_meson_args
@@ -230,6 +238,7 @@ function(android_add_dxvk sdl_include_dir)
         ${android_dxvk_frontend_args}
         "-Dandroid_sdl2_include=${sdl_include_dir}"
         ${android_dxvk_sdl_lib_args}
+        ${android_dxvk_swappy_args}
         ${android_dxvk_is_native_args})
 
     execute_process(COMMAND "${ANDROID_DXVK_PYTHON}"
@@ -268,6 +277,8 @@ function(android_add_dxvk sdl_include_dir)
         "patch_sha256=${android_dxvk_patch_sha256}"
         "sdl_include=${sdl_include_dir}"
         "sdl_library_dir=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+        "swappy_include=${android_dxvk_swappy_include}"
+        "swappy_library=${android_dxvk_swappy_lib}"
         "meson_args=${android_dxvk_meson_args}"
         "")
     file(CONFIGURE OUTPUT "${android_dxvk_inputs}"
