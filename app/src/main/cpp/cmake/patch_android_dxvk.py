@@ -484,6 +484,246 @@ LUID GetAdapterLUID(UINT) {
 ''')
     replace("src/util/meson.build", "elif dxvk_platform == 'darwin'\n  util_src += util_src_darwin\nelse",
                        "elif dxvk_platform == 'darwin'\n  util_src += util_src_darwin\nelif dxvk_platform == 'android'\n  util_src += ['platform/util_env_android.cpp', 'platform/util_string_android.cpp', 'platform/util_luid_android.cpp', 'platform/thread_native.cpp']\nelse")
+    # Android replaces the SurfaceView's ANativeWindow when an activity is
+    # restored. The native DXVK 1.x presenter otherwise keeps the Vulkan
+    # surface created for the old window and can block in vkAcquireNextImageKHR
+    # until the abandoned BufferQueue times out. Track the SDL window handle
+    # and rebuild the Vulkan surface before acquiring the first post-resume
+    # image.
+    replace("src/vulkan/vulkan_presenter.h",
+            """    VkResult recreateSwapChain(
+      const PresenterDesc&  desc);""",
+            """    VkResult recreateSwapChain(
+      const PresenterDesc&  desc);
+
+#if defined(__ANDROID__)
+    VkResult refreshAndroidSurface();
+#endif""")
+    replace("src/vulkan/vulkan_presenter.h",
+            "    HWND              m_window      = nullptr;",
+            """    HWND              m_window      = nullptr;
+
+#if defined(__ANDROID__)
+    void*               m_androidNativeWindow = nullptr;
+    PresenterDesc       m_androidSwapChainDesc = { };
+#endif""")
+    replace("src/vulkan/vulkan_presenter.cpp",
+            """  VkResult Presenter::acquireNextImage(PresenterSync& sync, uint32_t& index) {
+    sync = m_semaphores.at(m_frameIndex);""",
+            """#if defined(__ANDROID__)
+  VkResult Presenter::refreshAndroidSurface() {
+    SDL_SysWMinfo wmInfo { };
+    SDL_VERSION(&wmInfo.version);
+
+    void* nativeWindow = nullptr;
+    if (SDL_GetWindowWMInfo(reinterpret_cast<SDL_Window*>(m_window), &wmInfo))
+      nativeWindow = wmInfo.info.android.window;
+
+    if (nativeWindow == m_androidNativeWindow)
+      return nativeWindow ? VK_SUCCESS : VK_NOT_READY;
+
+    if (m_swapchain)
+      destroySwapchain();
+    if (m_surface)
+      destroySurface();
+
+    m_androidNativeWindow = nullptr;
+    if (!nativeWindow)
+      return VK_NOT_READY;
+
+    VkResult status = createSurface();
+    if (status != VK_SUCCESS)
+      return status;
+
+    m_androidNativeWindow = nativeWindow;
+    return recreateSwapChain(m_androidSwapChainDesc);
+  }
+#endif
+
+
+  VkResult Presenter::acquireNextImage(PresenterSync& sync, uint32_t& index) {
+#if defined(__ANDROID__)
+    VkResult surfaceStatus = refreshAndroidSurface();
+    if (surfaceStatus != VK_SUCCESS)
+      return surfaceStatus;
+#endif
+    sync = m_semaphores.at(m_frameIndex);""")
+
+    replace("src/dxvk/dxvk_adapter.cpp",
+            "#include <cstring>\n#include <unordered_set>",
+            """#include <cstring>
+#include <unordered_set>
+
+#if defined(__ANDROID__)
+#include <cstdlib>
+#endif""")
+    # Swappy is runtime-gated so the same binary retains the ordinary Vulkan
+    # path for controls and for devices without VK_GOOGLE_display_timing.
+    replace("src/dxvk/dxvk_adapter.cpp",
+            """    // Enable additional extensions if necessary
+    extensionsEnabled.merge(m_extraExtensions);""",
+            """    // Enable additional extensions if necessary
+    extensionsEnabled.merge(m_extraExtensions);
+#if defined(__ANDROID__)
+    const char* swappy = std::getenv("DXVK_ANDROID_SWAPPY");
+    if (swappy && *swappy == '1') {
+      if (m_deviceExtensions.supports(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME)) {
+        extensionsEnabled.add(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+        Logger::info("Android SwappyVk: enabling VK_GOOGLE_display_timing");
+      } else {
+        Logger::warn("Android SwappyVk: VK_GOOGLE_display_timing unavailable; using fallback pacing");
+      }
+    }
+#endif""")
+
+    replace("src/vulkan/vulkan_presenter.cpp",
+            '#include "vulkan_presenter.h"',
+            '''#include "vulkan_presenter.h"
+
+#include "vulkan_android_timing.h"
+
+#if defined(__ANDROID__)
+#include <cstdlib>
+#include <SDL_system.h>
+#include <SDL_syswm.h>
+#include <swappy/swappyVk.h>
+#endif''')
+    replace("src/vulkan/vulkan_presenter.cpp",
+            "#include <SDL_system.h>\n#include <swappy/swappyVk.h>",
+            "#include <SDL_system.h>\n#include <SDL_syswm.h>\n#include <swappy/swappyVk.h>")
+    replace("src/vulkan/vulkan_presenter.cpp",
+            "    VkResult status = m_vkd->vkQueuePresentKHR(m_device.queue, &info);",
+            """#if defined(__ANDROID__)
+    const uint64_t queuePresentStartNs = android_timing::nowNs();
+#endif
+    VkResult status = m_swappyEnabled
+      ? SwappyVk_queuePresent(m_device.queue, &info)
+      : m_vkd->vkQueuePresentKHR(m_device.queue, &info);
+#if defined(__ANDROID__)
+    android_timing::record("queue_present", queuePresentStartNs,
+      android_timing::nowNs(), static_cast<int32_t>(status));
+#endif""")
+    replace_prefer_old("src/vulkan/vulkan_presenter.cpp",
+            """#if defined(__ANDROID__)
+    const uint64_t queuePresentStartNs = android_timing::nowNs();
+#endif
+#if defined(__ANDROID__)
+    const uint64_t queuePresentStartNs = android_timing::nowNs();
+#endif""",
+            """#if defined(__ANDROID__)
+    const uint64_t queuePresentStartNs = android_timing::nowNs();
+#endif""")
+    replace_prefer_old("src/vulkan/vulkan_presenter.cpp",
+            """#if defined(__ANDROID__)
+    android_timing::record("queue_present", queuePresentStartNs,
+      android_timing::nowNs(), static_cast<int32_t>(status));
+#endif
+#if defined(__ANDROID__)
+    android_timing::record("queue_present", queuePresentStartNs,
+      android_timing::nowNs(), static_cast<int32_t>(status));
+#endif""",
+            """#if defined(__ANDROID__)
+    android_timing::record("queue_present", queuePresentStartNs,
+      android_timing::nowNs(), static_cast<int32_t>(status));
+#endif""")
+    replace_optional("src/vulkan/vulkan_presenter.cpp",
+            """      if (m_swappyEnabled) {
+        SwappyVk_setAutoSwapInterval(false);""",
+            """      if (m_swappyEnabled) {
+        SDL_SysWMinfo wmInfo { };
+        SDL_VERSION(&wmInfo.version);
+        if (SDL_GetWindowWMInfo(reinterpret_cast<SDL_Window*>(m_window), &wmInfo))
+          SwappyVk_setWindow(m_vkd->device(), m_swapchain, wmInfo.info.android.window);
+        else
+          Logger::warn(str::format("Android SwappyVk: SDL native window unavailable: ", SDL_GetError()));
+        SwappyVk_setAutoSwapInterval(false);""")
+    replace("src/vulkan/vulkan_presenter.h",
+            "    VkResult m_acquireStatus = VK_NOT_READY;",
+            """    VkResult m_acquireStatus = VK_NOT_READY;
+
+#if defined(__ANDROID__)
+    bool m_swappyEnabled = false;
+#endif""")
+    # Normalize a blank line with pinned-source whitespace left by an earlier
+    # configure pass before checking the full Android swapchain block below.
+    replace_optional("src/vulkan/vulkan_presenter.cpp",
+            "#endif\n    \n    // Acquire images and create views",
+            "#endif\n\n    // Acquire images and create views")
+    # Normalize a previously generated experimental auto-pacing block before
+    # checking the upstream swapchain block below. This keeps reconfiguration
+    # idempotent when the cached DXVK source contains the rejected A/B form.
+    replace_optional("src/vulkan/vulkan_presenter.cpp",
+            """        const char* autoInterval = std::getenv("DXVK_ANDROID_SWAPPY_AUTO_INTERVAL");
+        const bool useAutoInterval = autoInterval && *autoInterval == '1';
+        SwappyVk_setAutoSwapInterval(useAutoInterval);
+        SwappyVk_setAutoPipelineMode(useAutoInterval);""",
+            """        SwappyVk_setAutoSwapInterval(false);
+        SwappyVk_setAutoPipelineMode(false);""")
+    replace_one_of("src/vulkan/vulkan_presenter.cpp", (
+        """    if ((status = m_vkd->vkCreateSwapchainKHR(m_vkd->device(),
+        &swapInfo, nullptr, &m_swapchain)) != VK_SUCCESS)
+      return status;
+
+    // Acquire images and create views""",
+        ("    if ((status = m_vkd->vkCreateSwapchainKHR(m_vkd->device(),\n"
+         "        &swapInfo, nullptr, &m_swapchain)) != VK_SUCCESS)\n"
+         "      return status;\n    \n"
+         "    // Acquire images and create views"),
+    ),
+            """    if ((status = m_vkd->vkCreateSwapchainKHR(m_vkd->device(),
+        &swapInfo, nullptr, &m_swapchain)) != VK_SUCCESS)
+      return status;
+
+#if defined(__ANDROID__)
+    m_swappyEnabled = false;
+    const char* swappy = std::getenv("DXVK_ANDROID_SWAPPY");
+    if (swappy && *swappy == '1') {
+      uint64_t refreshDuration = 0;
+      SwappyVk_setQueueFamilyIndex(m_vkd->device(), m_device.queue, m_device.queueFamily);
+      m_swappyEnabled = SwappyVk_initAndGetRefreshCycleDuration(
+        static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv()),
+        static_cast<jobject>(SDL_AndroidGetActivity()),
+        m_device.adapter, m_vkd->device(), m_swapchain, &refreshDuration);
+      if (m_swappyEnabled) {
+        SDL_SysWMinfo wmInfo { };
+        SDL_VERSION(&wmInfo.version);
+        if (SDL_GetWindowWMInfo(reinterpret_cast<SDL_Window*>(m_window), &wmInfo))
+          SwappyVk_setWindow(m_vkd->device(), m_swapchain, wmInfo.info.android.window);
+        else
+          Logger::warn(str::format("Android SwappyVk: SDL native window unavailable: ", SDL_GetError()));
+        SwappyVk_setAutoSwapInterval(false);
+        SwappyVk_setAutoPipelineMode(false);
+        SwappyVk_setSwapIntervalNS(m_vkd->device(), m_swapchain, refreshDuration * 2u);
+        Logger::info(str::format("Android SwappyVk enabled: refresh interval ", refreshDuration, " ns"));
+      } else {
+        Logger::err("Android SwappyVk initialization failed; using vkQueuePresentKHR");
+      }
+    }
+#endif
+
+    // Acquire images and create views""")
+    replace("src/vulkan/vulkan_presenter.cpp",
+            """      if (m_swappyEnabled) {
+        SwappyVk_setAutoSwapInterval(false);""",
+            """      if (m_swappyEnabled) {
+        SDL_SysWMinfo wmInfo { };
+        SDL_VERSION(&wmInfo.version);
+        if (SDL_GetWindowWMInfo(reinterpret_cast<SDL_Window*>(m_window), &wmInfo))
+          SwappyVk_setWindow(m_vkd->device(), m_swapchain, wmInfo.info.android.window);
+        else
+          Logger::warn(str::format("Android SwappyVk: SDL native window unavailable: ", SDL_GetError()));
+        SwappyVk_setAutoSwapInterval(false);""")
+    replace("src/vulkan/vulkan_presenter.cpp",
+            """  void Presenter::destroySwapchain() {
+    for (const auto& img : m_images)""",
+            """  void Presenter::destroySwapchain() {
+#if defined(__ANDROID__)
+    if (m_swappyEnabled && m_swapchain) {
+      SwappyVk_destroySwapchain(m_vkd->device(), m_swapchain);
+      m_swappyEnabled = false;
+    }
+#endif
+    for (const auto& img : m_images)""")
     # The old fork has no android_sdl2_include option; add one for the SDL
     # headers supplied by the application and use it in its native dependency.
     replace("meson_options.txt", "option('enable_tests',", "option('android_sdl2_include', type: 'string', value: '')\noption('android_sdl2_lib', type: 'string', value: '')\noption('android_swappy_include', type: 'string', value: '')\noption('android_swappy_lib', type: 'string', value: '')\noption('enable_tests',")
