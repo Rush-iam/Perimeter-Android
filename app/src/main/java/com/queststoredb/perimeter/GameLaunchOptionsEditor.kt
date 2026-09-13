@@ -3,6 +3,7 @@ package com.queststoredb.perimeter
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Typeface
+import android.os.PowerManager
 import android.text.InputType
 import android.view.View
 import android.view.WindowManager
@@ -24,6 +25,8 @@ internal class GameLaunchOptionsEditor(
 ) {
     private val saved = GameLaunchOptions.parse(original)
         .associateBy { it.removePrefix("tmp_").substringBefore('=') }
+    private val sustainedPerformanceSupported =
+        activity.getSystemService(PowerManager::class.java)?.isSustainedPerformanceModeSupported == true
     private val readers = linkedMapOf<String, () -> String?>()
     private val resetters = mutableListOf<() -> Unit>()
 
@@ -107,7 +110,9 @@ internal class GameLaunchOptionsEditor(
         val old = saved[spec.key]?.substringAfter('=')
         if (spec.kind == Kind.FLAG || spec.kind == Kind.TOGGLE || spec.kind == Kind.INVERTED_BOOLEAN) {
             val checkbox = CheckBox(activity).apply {
-                text = spec.title
+                val supported = spec.key != SUSTAINED_PERFORMANCE_KEY || sustainedPerformanceSupported
+                text = if (supported) spec.title else "(unsupported) ${spec.title}"
+                isEnabled = supported
                 // Presence flags are enabled even when their original value was "0".
                 isChecked = when (spec.kind) {
                     Kind.FLAG -> old != null
@@ -223,10 +228,12 @@ internal class GameLaunchOptionsEditor(
             Option("Gameplay & startup", "autoSwitchAI", "Autoswitch controls to AI when idle", Kind.FLAG,
                 "After 60 seconds without player input, the active human player becomes AI-controlled. Player input switches control back and resets the timer."),
             Option("Display & performance", "graph", "Graphics backend", Kind.CHOICE, choices = listOf(
-                "sokol" to "Sokol / GLES3"),
+                "sokol" to "Sokol / GLES3 legacy"),
                 defaultChoiceLabel = "DXVK ${BuildConfig.DXVK_VERSION}.x", defaultChoiceValue = "d3d9"),
             Option("Display & performance", "show_fps", "Show FPS counter", Kind.TOGGLE),
             Option("Display & performance", "HT", "Disable multithreading", Kind.INVERTED_BOOLEAN),
+            Option("Display & performance", "sustained_performance", "Android Sustained Performance Mode", Kind.TOGGLE,
+                "Disables boost clocks"),
             Option("Replays", "saveplay", "Record replay to file", Kind.TEXT, valueHint = null),
             Option("Replays", "replay", "Replay file", Kind.TEXT, valueHint = null),
             Option("Replays", "AI", "Replay AI mode", Kind.CHOICE, choices = listOf(
@@ -244,6 +251,13 @@ internal class GameLaunchOptionsEditor(
             Option("Diagnostics", "read_log_file", "Open last log file", Kind.ACTION),
             Option("Diagnostics", "console", "Redirect logs to Logcat instead of file", Kind.FLAG,
                 "The log file is not created when enabled."),
+            Option("Diagnostics", "frame_timing", "Record frame timing", Kind.TOGGLE,
+                "Writes renderer-independent frame and presentation timestamps for benchmark captures."),
+            Option("Diagnostics", "dxvk_max_frame_latency", "DXVK maximum frame latency", Kind.CHOICE,
+                "Diagnostic override for the DXVK 1 D3D9 submission queue.",
+                choices = listOf("1" to "1 frame"), defaultChoiceLabel = "DXVK default"),
+            Option("Diagnostics", "zoom_lod_cache", "Zoom LOD cache", Kind.TOGGLE,
+                "Cache prepared terrain LOD variants for camera zooms on either renderer."),
             Option("Diagnostics", "content_debug", "Log content loading", Kind.FLAG),
             Option("Diagnostics", "content_dump_debug", "Export content file mapping", Kind.FLAG),
             Option("Diagnostics", "debug_key_handler", "Enable debug keyboard commands", Kind.FLAG),
@@ -257,5 +271,6 @@ internal class GameLaunchOptionsEditor(
         )
 
         const val MAX_LOG_CHARACTERS = 512 * 1024
+        const val SUSTAINED_PERFORMANCE_KEY = "sustained_performance"
     }
 }

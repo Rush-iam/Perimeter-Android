@@ -17,6 +17,11 @@ class GameLaunchOptions(context: Context) {
         ?.substringAfter('=')
         ?: "d3d9"
 
+    /** Requests Android Sustained Performance Mode to disable boost clocks. */
+    fun sustainedPerformance(): Boolean = parse(load())
+        .lastOrNull { it.removePrefix("tmp_").substringBefore('=') == "sustained_performance" }
+        ?.substringAfter('=') == "1"
+
     /** Replaces the renderer argument without discarding unrelated launch options. */
     fun selectRenderer(renderer: String) {
         val arguments = parse(load())
@@ -30,12 +35,18 @@ class GameLaunchOptions(context: Context) {
         // SDL passes each array entry as one argument, so spaces need no shell quoting
         // RunBackground is an engine focus policy: with 0, a focus-loss event
         // stops engine update/render quantization and pauses the network client.
-        val defaults = listOf(
+        val defaults = mutableListOf(
             "content=$contentPath",
             "FullScreen=1",
             "VSync=1",
             "RunBackground=0"
         )
+        // The alternate-LOD cache uses shared tilemap resources and is safe
+        // for both Android renderers. Keep an explicit 0 authoritative for
+        // A/B comparisons.
+        if ("zoom_lod_cache" !in keys) {
+            defaults += "zoom_lod_cache=1"
+        }
         return (custom + defaults.filter { it.substringBefore('=') !in keys }).toTypedArray()
     }
 

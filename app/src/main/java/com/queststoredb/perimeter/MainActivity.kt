@@ -1,9 +1,11 @@
 package com.queststoredb.perimeter
 
 import android.content.pm.ActivityInfo
+import android.os.PowerManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.util.Log
 import android.view.KeyEvent
 import android.window.OnBackInvokedDispatcher
 import org.libsdl.app.SDL
@@ -15,12 +17,23 @@ class MainActivity : SDLActivity() {
         ScaledSDLSurface(context)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        configureSustainedPerformanceMode()
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
             ) { sendEscapeClick() }
         }
+    }
+
+    private fun configureSustainedPerformanceMode() {
+        val requested = GameLaunchOptions(this).sustainedPerformance()
+        val powerManager = getSystemService(PowerManager::class.java)
+        val supported = powerManager?.isSustainedPerformanceModeSupported == true
+        if (supported) {
+            window.setSustainedPerformanceMode(requested)
+        }
+        Log.i("PerimeterPower", "Sustained Performance requested=$requested supported=$supported")
     }
 
     override fun onDestroy() {
