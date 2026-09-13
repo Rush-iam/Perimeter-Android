@@ -653,6 +653,44 @@ void record(const char* event, uint64_t startNs, uint64_t endNs, int32_t status)
 #endif
     if (compileStatus != VK_SUCCESS) {
       Logger::err("DxvkComputePipeline: Failed to compile pipeline");""")
+    # This is a diagnostic-only D30 control. It is deliberately independent of
+    # the Swappy path so call-rate and compositor-cadence results stay separate.
+    replace("src/d3d9/d3d9_options.h",
+            "    int32_t maxFrameLatency;",
+            "    int32_t maxFrameLatency;\n    bool androidSinglePresentInterval2;")
+    replace("src/d3d9/d3d9_options.cpp",
+            """    this->maxFrameLatency               = config.getOption<int32_t>     ("d3d9.maxFrameLatency",               0);
+    this->maxFrameRate""",
+            """    this->maxFrameLatency               = config.getOption<int32_t>     ("d3d9.maxFrameLatency",               0);
+    this->androidSinglePresentInterval2 = config.getOption<bool>        ("d3d9.androidSinglePresentInterval2", false);
+    this->maxFrameRate""")
+    # Accept the clean upstream loop or the earlier option-only experiment in
+    # one operation; the final form is the only Android policy added here.
+    replace_one_of("src/d3d9/d3d9_swapchain.cpp", (
+        """    for (uint32_t i = 0; i < SyncInterval || i < 1; i++) {
+      SynchronizePresent();""",
+        """    uint32_t presentCount = std::max(SyncInterval, 1u);
+#if defined(__ANDROID__)
+    if (SyncInterval == 2 && m_parent->GetOptions()->androidSinglePresentInterval2)
+      presentCount = 1;
+#endif
+
+    for (uint32_t i = 0; i < presentCount; i++) {
+      SynchronizePresent();""",
+    ),
+        """    uint32_t presentCount = std::max(SyncInterval, 1u);
+#if defined(__ANDROID__)
+    const char* singlePresent = std::getenv("DXVK_ANDROID_SINGLE_PRESENT");
+    if (SyncInterval == 2 && (m_parent->GetOptions()->androidSinglePresentInterval2 ||
+        (singlePresent && *singlePresent == '1')))
+      presentCount = 1;
+#endif
+
+    for (uint32_t i = 0; i < presentCount; i++) {
+      SynchronizePresent();""")
+    replace("src/d3d9/d3d9_swapchain.cpp",
+            "      if (i + 1 >= SyncInterval)",
+            "      if (i + 1 >= presentCount)")
     # VK_SUBOPTIMAL_KHR is persistent on some Android WSI implementations. Do
     # not recreate the swap chain every frame while presentation is valid.
     replace_one_of("src/d3d9/d3d9_swapchain.cpp", (
