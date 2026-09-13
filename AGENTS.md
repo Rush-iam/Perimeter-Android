@@ -19,6 +19,13 @@
 - **Min SDK:** 29 (Android 10).
 - **Target SDK:** 37 (Android 15).
 
+### Signing and Device Installs
+- Use Android Studio's default debug keystore at `%USERPROFILE%\.android\debug.keystore` for debug APKs installed on the configured Android device.
+- The debug key alias is `androiddebugkey`. Keep the keystore outside the repository; do not substitute a repository-local or sandbox-local debug keystore.
+- Do not set `ANDROID_USER_HOME` to a repository-local path when building or installing. The Android Gradle plugin derives the default debug keystore from that location, which would silently select `.android\debug.keystore` inside the repository and produce an APK that cannot update the Android Studio-signed install.
+- If an isolated Gradle cache is needed, set `GRADLE_USER_HOME` only; leave `ANDROID_USER_HOME` unset so signing resolves to `%USERPROFILE%\.android\debug.keystore`.
+- In shells where `adb` reports `Cannot mkdir '\.android': Permission denied`, the shell's `HOME` is empty. Set it from the Windows user profile before using `adb`: `$env:HOME = $env:USERPROFILE`. This keeps the device-auth directory at `%USERPROFILE%\.android`; do not point it at the repository. `ANDROID_USER_HOME` and `ANDROID_SDK_HOME` are not reliable fixes for this `adb` error.
+
 ## Coding Standards & Guidelines
 ### Native Code (C++)
 - **Standard:** C++17.
@@ -30,6 +37,32 @@
 ### Android Development
 - **UI:** The wrapper uses standard Android Views/Activity for now; Jetpack Compose is preferred for any new Android-specific UI.
 - **Namespace:** `com.queststoredb.perimeter`.
+
+### Frame-Pacing Benchmark Workflow
+- Use the Android Studio-installed `sokolDxvk1Debug` build and the established scripts under `scripts/frame-pacing/`.
+- After restarting `ContentActivity`, wait **2 seconds** for the launcher, tap **Play**, then wait **16 seconds after that tap** for the game main menu. Do not run `Start-TutorialBenchmark.ps1` while the launcher is still visible.
+- Start `Start-TutorialBenchmark.ps1` from the game's top menu with `-InitialMenuSeconds 0 -TransitionSeconds 2`; use the established mission-load wait and verify the gameplay HUD before capture. The script's menu navigation must not begin from the launcher or a submenu.
+- `Capture-FramePacingRun.ps1` defaults to a **10-second warm-up**. The controlled zoom case is 1.5 seconds out, 1.5 seconds in, repeated seven times; capture it from a fresh Tutorial mission.
+- Record native DXVK timing and, when analyzing presentation, run the passive SurfaceFlinger sampler concurrently.
+
+### Commit Plan Workflow
+- When asked to prepare a commit-splitting plan, inspect the Git repository named by the user. If the path is a nested repository or submodule, run Git from that repository's root; do not substitute the parent repository.
+- Respect the requested change state exactly: use `git diff --cached` for staged changes and `git diff` for unstaged tracked changes. Do not stage, unstage, commit, or otherwise alter the index while preparing the plan.
+- If the requested repository/state has no changes, report that fact instead of analyzing another repository or change state.
+- Write or update a plan document in the inspected repository, with proposed commits grouped and sorted by category. Use these category icons consistently: `🛠️` build, `🐛` bugfix, `🕹️` controls, `🎨` graphics, `📝` logging, `🚀` optimization, `♻️` refactoring, `🧹` cleanup, `📚` docs, `🧪` testing, `🧰` tooling, and `📊` benchmark.
+- Prefix each title with its category icon and category tag. Because this is the Android project, omit the redundant `[Android]` tag from its commits; use `[Android]` only when a mixed-scope repository needs to distinguish Android-only work.
+- Make every commit description standalone and describe the completed change. Do not include instructions about what to perform, test, stage, validate, or fix, and do not make a commit description depend on another commit's description.
+- Include file and line-number references for every proposed commit. Split mixed-purpose files at hunk level, and exclude whitespace-only or no-op changes from functional commits.
+- Keep dependency-aware ordering, cross-repository prerequisites, and review notes outside commit descriptions. Treat the described changes as already tested unless the user explicitly asks for a testing plan.
+
+#### Approved Plan Commit Process
+- Once the user approves the plan, recheck the inspected repository from its own root: confirm the intended branch, review the current worktree and index, and reconcile any changes made since the plan was prepared. Do not assume the plan is still an exact match.
+- Commits in the core `/Perimeter` submodule must always be made on its `android` branch. Confirm that branch before committing and stop if the submodule is on another branch.
+- For other repositories, commit only on the branch explicitly requested by the user. Do not switch branches, push, or modify the parent repository unless the user requests it.
+- Follow the plan's dependency-aware order. For each commit, stage only the listed files and hunks; preserve unrelated staged, unstaged, untracked, whitespace-only, and no-op changes.
+- Before each commit, inspect `git diff --cached --stat`, `git diff --cached --name-only`, and `git diff --cached`. Run `git diff --cached --check` with the repository's line-ending configuration so existing CRLF files are not rewritten merely to satisfy the check.
+- Use the approved title and standalone description from the plan verbatim unless the user explicitly requests a description change. Create one commit at a time and verify its result before proceeding to the next.
+- After the final commit, verify the branch, recent commit order, staged state, and worktree status. Report any intentionally preserved changes and confirm that nothing was pushed unless pushing was explicitly requested.
 
 ## Architecture Notes
 - The engine is integrated as a library via `add_subdirectory(${PERIMETER_ROOT})` in the native `CMakeLists.txt`.
