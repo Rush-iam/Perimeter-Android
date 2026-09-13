@@ -188,7 +188,12 @@ unset(_perimeter_android_sdl_consumer)
 
 # Add Android-specific logging redirector to the engine target
 target_sources(perimeter PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidLog.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidLog.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidFrameTiming.cpp")
+target_include_directories(perimeter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(Render PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(RenderSokol PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(UserInterface PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Link the core engine library and dependencies
 target_link_libraries(
