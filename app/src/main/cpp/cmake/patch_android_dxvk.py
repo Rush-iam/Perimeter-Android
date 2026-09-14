@@ -4,6 +4,7 @@ Fail on source drift rather than silently applying a partial patch. The Vulkan
 loader already supports libvulkan.so; SDL still owns Android surface creation.
 """
 import pathlib
+import re
 import sys
 
 root = pathlib.Path(sys.argv[1])
@@ -136,8 +137,58 @@ def write_if_missing(relative_path, content):
         path.write_text(content, encoding="utf-8", newline="\n")
 
 
+def rename_d3d9_library(generation):
+    """Give the Android D3D9 DSO a generation-specific filename and SONAME."""
+    path = root / "src/d3d9/meson.build"
+    text = path.read_text(encoding="utf-8")
+    desired = f"dxvk_d3d9_v{generation}"
+    if (re.search(rf"shared_library\(\s*['\"]{desired}['\"]", text) or
+            re.search(rf"shared_library\(\s*(?:so_prefix|dxvk_name_prefix)\+'d3d9_v{generation}'", text)):
+        return
+
+    # DXVK 2 uses dxvk_name_prefix while the native fork uses so_prefix. Both
+    # forms name the first shared_library argument with a generated prefix.
+    matches = list(re.finditer(
+        r"(shared_library\(\s*(?:so_prefix|dxvk_name_prefix)\+)'d3d9'(\+dll_ext)?\s*,",
+        text))
+    if len(matches) == 1:
+        match = matches[0]
+        suffix = "'" + ("+dll_ext" if match.group(2) else "") + ","
+        replacement = f"{match.group(1)}'d3d9_v{generation}{suffix}"
+        path.write_text(
+            text[:match.start()] + replacement + text[match.end():],
+            encoding="utf-8",
+            newline="\n")
+        return
+
+    matches = list(re.finditer(
+        r"(shared_library\(\s*(?:so_prefix|dxvk_name_prefix)\+)'d3d9('​(?:\+dll_ext)?\s*,)", text))
+    if len(matches) == 1:
+        match = matches[0]
+        replacement = f"{match.group(1)}'d3d9_v{generation}{match.group(2)}"
+        path.write_text(
+            text[:match.start()] + replacement + text[match.end():],
+            encoding="utf-8",
+            newline="\n")
+        return
+
+    matches = list(re.finditer(
+        r"(shared_library\(\s*['\"])(?:dxvk_)?d3d9(['\"])", text))
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Unexpected pinned DXVK source in src/d3d9/meson.build: "
+            "expected exactly one D3D9 shared_library target")
+    match = matches[0]
+    replacement = f"{match.group(1)}{desired}{match.group(2)}"
+    path.write_text(
+        text[:match.start()] + replacement + text[match.end():],
+        encoding="utf-8",
+        newline="\n")
+
+
 def patch_v2():
     """Apply the seven minimal Android changes to clean pinned DXVK 2.7.1."""
+    rename_d3d9_library(2)
     # Android packages SDL2 as libSDL2.so rather than a desktop SONAME.
     replace("src/wsi/sdl2/wsi_platform_sdl2.cpp",
             '#elif defined(__APPLE__)',
@@ -183,6 +234,7 @@ def patch_v2():
 
 def patch_v1():
     """Patch the legacy DXVK 1.x fork used by the native compatibility path."""
+    rename_d3d9_library(1)
     # Android replaces the SurfaceView's ANativeWindow when an activity is
     # restored. The native DXVK 1.x presenter otherwise keeps the Vulkan
     # surface created for the old window and can block in vkAcquireNextImageKHR

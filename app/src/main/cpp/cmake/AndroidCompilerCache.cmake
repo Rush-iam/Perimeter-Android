@@ -1,5 +1,5 @@
 # Optional compiler-cache integration for the Android Clang toolchain.  Keep
-# the cache outside the build tree so it can be reused by both renderer flavors.
+# the cache outside the build tree so it can be reused by both renderer paths.
 set(ANDROID_COMPILER_CACHE "AUTO" CACHE STRING
     "Android compiler cache: AUTO, CCACHE, SCCACHE, or OFF")
 set_property(CACHE ANDROID_COMPILER_CACHE PROPERTY STRINGS AUTO CCACHE SCCACHE OFF)

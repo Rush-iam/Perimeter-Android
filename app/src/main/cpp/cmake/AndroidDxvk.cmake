@@ -157,69 +157,56 @@ macro(_dxvk_ensure_host_tools)
 endmacro()
 
 # This target is deliberately independent of Perimeter's desktop DXVK builder.
-function(android_add_dxvk sdl_include_dir swappy_target)
-    if(NOT ANDROID OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
-        message(FATAL_ERROR "Android DXVK currently supports only Android arm64-v8a")
-    endif()
-    if(NOT ANDROID_STL STREQUAL "c++_shared")
-        message(FATAL_ERROR "Android DXVK requires ANDROID_STL=c++_shared")
-    endif()
+function(_android_add_dxvk_generation generation sdl_include_dir swappy_target)
+    set(android_dxvk_name "android_dxvk_source_v${generation}")
+    set(android_dxvk_source_key "${android_dxvk_name}")
 
-    _dxvk_ensure_host_tools()
-
-    set(PERIMETER_ANDROID_DXVK_VERSION "2" CACHE STRING "Android DXVK generation (1 or 2)")
-    set_property(CACHE PERIMETER_ANDROID_DXVK_VERSION PROPERTY STRINGS 1 2)
-    if(NOT PERIMETER_ANDROID_DXVK_VERSION MATCHES "^[12]$")
-        message(FATAL_ERROR "PERIMETER_ANDROID_DXVK_VERSION must be 1 or 2")
-    endif()
-
-    if(PERIMETER_ANDROID_DXVK_VERSION STREQUAL "1")
+    if(generation STREQUAL "1")
         set(android_dxvk_git_repository https://github.com/IonAgorria/dxvk-native)
         set(android_dxvk_git_tag 43aedc756cbd620b9ee8b1cf2c17b17cc49b3781)
-    else()
+        set(android_dxvk_variant native)
+    elseif(generation STREQUAL "2")
         set(android_dxvk_git_repository https://github.com/doitsujin/dxvk.git)
         set(android_dxvk_git_tag c3dd74be6baec53786d4e064a572185b70347a17)
+        set(android_dxvk_variant v2)
+    else()
+        message(FATAL_ERROR "Unsupported Android DXVK generation: ${generation}")
     endif()
 
     perimeter_android_dependency_source_args(_android_dxvk_source
-        android_dxvk_source
-        "android_dxvk_source_v${PERIMETER_ANDROID_DXVK_VERSION}")
-    FetchContent_Declare(android_dxvk_source
+        ${android_dxvk_source_key} ${android_dxvk_source_key})
+    FetchContent_Declare(${android_dxvk_name}
         GIT_REPOSITORY ${android_dxvk_git_repository}
         GIT_TAG ${android_dxvk_git_tag}
         GIT_SUBMODULES_RECURSE TRUE
         ${_android_dxvk_source}
         SOURCE_SUBDIR android_no_cmake)
-    FetchContent_MakeAvailable(android_dxvk_source)
+    FetchContent_MakeAvailable(${android_dxvk_name})
 
-    # DXVK 2.x and the native 1.x fork have different Meson interfaces.
-    set(android_dxvk_is_native FALSE)
-    if(PERIMETER_ANDROID_DXVK_VERSION STREQUAL "1")
-        set(android_dxvk_is_native TRUE)
-    endif()
-
-    if(EXISTS "${android_dxvk_source_SOURCE_DIR}/meson_options.txt")
-        file(READ "${android_dxvk_source_SOURCE_DIR}/meson_options.txt" android_dxvk_options)
-        if(android_dxvk_is_native AND NOT android_dxvk_options MATCHES "dxvk_native_force")
+    set(android_dxvk_source_dir "${${android_dxvk_name}_SOURCE_DIR}")
+    if(EXISTS "${android_dxvk_source_dir}/meson_options.txt")
+        file(READ "${android_dxvk_source_dir}/meson_options.txt" android_dxvk_options)
+        if(generation STREQUAL "1" AND NOT android_dxvk_options MATCHES "dxvk_native_force")
             message(FATAL_ERROR "DXVK v1 selected, but the source is not the native fork")
-        elseif(NOT android_dxvk_is_native AND android_dxvk_options MATCHES "dxvk_native_force")
+        elseif(generation STREQUAL "2" AND android_dxvk_options MATCHES "dxvk_native_force")
             message(FATAL_ERROR "DXVK v2 selected, but the source is the native fork")
         endif()
     endif()
 
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py")
-
-    set(android_dxvk_variant v2)
     set(android_dxvk_frontend_args -Dnative_sdl2=enabled -Dnative_sdl3=disabled -Dnative_glfw=disabled)
     set(android_dxvk_component_args -Denable_d3d9=true -Denable_d3d8=false -Denable_d3d10=false -Denable_d3d11=false -Denable_dxgi=false)
+    unset(android_dxvk_sdl_lib_args)
+    unset(android_dxvk_swappy_args)
+    unset(android_dxvk_is_native_args)
 
-    if(android_dxvk_is_native)
-        set(android_dxvk_variant native)
+    if(generation STREQUAL "1")
         set(android_dxvk_is_native_args -Ddxvk_native_force=true -Ddxvk_native_wsi=sdl2)
         set(android_dxvk_frontend_args)
         set(android_dxvk_component_args -Denable_d3d9=true -Denable_tests=false -Denable_dxgi=false -Denable_d3d10=false -Denable_d3d11=false)
         set(android_dxvk_sdl_lib_args "-Dandroid_sdl2_lib=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+        if(NOT swappy_target OR NOT TARGET ${swappy_target})
+            message(FATAL_ERROR "Android DXVK v1 requires the Swappy prefab target")
+        endif()
         get_target_property(android_dxvk_swappy_include ${swappy_target} INTERFACE_INCLUDE_DIRECTORIES)
         get_target_property(android_dxvk_swappy_lib ${swappy_target} IMPORTED_LOCATION)
         if(NOT android_dxvk_swappy_include OR NOT android_dxvk_swappy_lib)
@@ -243,10 +230,10 @@ function(android_add_dxvk sdl_include_dir swappy_target)
 
     execute_process(COMMAND "${ANDROID_DXVK_PYTHON}"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py"
-        "${android_dxvk_source_SOURCE_DIR}" "${android_dxvk_variant}"
+        "${android_dxvk_source_dir}" "${android_dxvk_variant}"
         COMMAND_ERROR_IS_FATAL ANY)
 
-    set(dxvk_build "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk")
+    set(dxvk_build "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk-v${generation}")
     file(MAKE_DIRECTORY "${dxvk_build}")
     configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/android-dxvk.cross.in"
         "${dxvk_build}/android.cross" @ONLY)
@@ -262,9 +249,9 @@ function(android_add_dxvk sdl_include_dir swappy_target)
     string(JOIN "\n" android_dxvk_inputs_content
         "git_repository=${android_dxvk_git_repository}"
         "git_revision=${android_dxvk_git_tag}"
-        "generation=${PERIMETER_ANDROID_DXVK_VERSION}"
+        "generation=${generation}"
         "variant=${android_dxvk_variant}"
-        "source_dir=${android_dxvk_source_SOURCE_DIR}"
+        "source_dir=${android_dxvk_source_dir}"
         "abi=${ANDROID_ABI}"
         "android_platform=${ANDROID_PLATFORM}"
         "android_stl=${ANDROID_STL}"
@@ -284,13 +271,19 @@ function(android_add_dxvk sdl_include_dir swappy_target)
     file(CONFIGURE OUTPUT "${android_dxvk_inputs}"
         CONTENT "${android_dxvk_inputs_content}" @ONLY)
 
+    # The generated setup script uses these generic names so both independent
+    # instances can share the same template.
+    set(android_dxvk_source_SOURCE_DIR "${android_dxvk_source_dir}")
     set(android_dxvk_setup_script "${dxvk_build}/run-meson-setup.cmake")
     configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/run_android_dxvk_meson.cmake.in"
         "${android_dxvk_setup_script}" @ONLY)
 
-    set(dxvk_library "${dxvk_build}/build/src/d3d9/libdxvk_d3d9.so")
-    ExternalProject_Add(android_dxvk_build
-        SOURCE_DIR "${android_dxvk_source_SOURCE_DIR}"
+    set(dxvk_library "${dxvk_build}/build/src/d3d9/libdxvk_d3d9_v${generation}.so")
+    set(dxvk_packaged_library
+        "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libdxvk_d3d9_v${generation}.so")
+    set(android_dxvk_build_target "android_dxvk_build_v${generation}")
+    ExternalProject_Add(${android_dxvk_build_target}
+        SOURCE_DIR "${android_dxvk_source_dir}"
         BINARY_DIR "${dxvk_build}/build"
         DOWNLOAD_COMMAND ""
         UPDATE_COMMAND ""
@@ -299,7 +292,7 @@ function(android_add_dxvk sdl_include_dir swappy_target)
         INSTALL_COMMAND ""
         BUILD_BYPRODUCTS "${dxvk_library}")
 
-    ExternalProject_Add_Step(android_dxvk_build configure_inputs
+    ExternalProject_Add_Step(${android_dxvk_build_target} configure_inputs
         COMMAND "${CMAKE_COMMAND}" -E true
         DEPENDEES patch
         DEPENDERS configure
@@ -309,14 +302,69 @@ function(android_add_dxvk sdl_include_dir swappy_target)
             "${dxvk_build}/host.native"
             "${android_dxvk_setup_script}"
             "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py"
-        COMMENT "Checking Android DXVK configuration inputs")
+        COMMENT "Checking Android DXVK v${generation} configuration inputs")
 
-    add_library(AndroidDxvk::D3D9 SHARED IMPORTED GLOBAL)
-    set_target_properties(AndroidDxvk::D3D9 PROPERTIES
+    add_library(AndroidDxvk::D3D9_v${generation} SHARED IMPORTED GLOBAL)
+    set_target_properties(AndroidDxvk::D3D9_v${generation} PROPERTIES
         IMPORTED_LOCATION "${dxvk_library}"
-        INTERFACE_INCLUDE_DIRECTORIES "${android_dxvk_source_SOURCE_DIR}/include/native/directx;${android_dxvk_source_SOURCE_DIR}/include/native/windows")
-    if(android_dxvk_is_native)
-        target_link_libraries(AndroidDxvk::D3D9 INTERFACE SDL2::SDL2)
+        INTERFACE_INCLUDE_DIRECTORIES "${android_dxvk_source_dir}/include/native/directx;${android_dxvk_source_dir}/include/native/windows")
+    if(generation STREQUAL "1")
+        target_link_libraries(AndroidDxvk::D3D9_v${generation} INTERFACE SDL2::SDL2)
     endif()
-    add_dependencies(AndroidDxvk::D3D9 android_dxvk_build)
+    add_dependencies(AndroidDxvk::D3D9_v${generation} ${android_dxvk_build_target})
+
+    add_custom_command(OUTPUT "${dxvk_packaged_library}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${dxvk_library}" "${dxvk_packaged_library}"
+        DEPENDS ${android_dxvk_build_target} "${dxvk_library}"
+        COMMENT "Packaging Android DXVK v${generation}")
+    set(android_dxvk_package_target "android_dxvk_package_v${generation}")
+    add_custom_target(${android_dxvk_package_target}
+        DEPENDS "${dxvk_packaged_library}")
+
+    set(android_dxvk_header_dirs
+        "${android_dxvk_source_dir}/include/native/directx"
+        "${android_dxvk_source_dir}/include/native/windows"
+        PARENT_SCOPE)
+    set(android_dxvk_package_targets "${android_dxvk_package_target}"
+        PARENT_SCOPE)
+    set(android_dxvk_build_targets "${android_dxvk_build_target}"
+        PARENT_SCOPE)
+endfunction()
+
+function(android_add_dxvk sdl_include_dir swappy_target)
+    if(NOT ANDROID OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
+        message(FATAL_ERROR "Android DXVK currently supports only Android arm64-v8a")
+    endif()
+    if(NOT ANDROID_STL STREQUAL "c++_shared")
+        message(FATAL_ERROR "Android DXVK requires ANDROID_STL=c++_shared")
+    endif()
+
+    _dxvk_ensure_host_tools()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py")
+
+    _android_add_dxvk_generation(1 "${sdl_include_dir}" "${swappy_target}")
+    set(android_dxvk_v1_headers "${android_dxvk_header_dirs}")
+    set(android_dxvk_v1_package "${android_dxvk_package_targets}")
+    set(android_dxvk_v1_build "${android_dxvk_build_targets}")
+    _android_add_dxvk_generation(2 "${sdl_include_dir}" "${swappy_target}")
+    set(android_dxvk_v2_headers "${android_dxvk_header_dirs}")
+    set(android_dxvk_v2_package "${android_dxvk_package_targets}")
+    set(android_dxvk_v2_build "${android_dxvk_build_targets}")
+
+    # Render consumes only the stable D3D9 headers. Neither imported DSO is a
+    # link dependency; both are copied into the ABI output for runtime loading.
+    add_library(AndroidDxvk::Headers INTERFACE IMPORTED GLOBAL)
+    set_target_properties(AndroidDxvk::Headers PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${android_dxvk_v2_headers}")
+    # Compatibility interface for small Android tools such as dxvkSmoke. It
+    # deliberately carries headers only, so linking it cannot load DXVK.
+    add_library(AndroidDxvk::D3D9 INTERFACE IMPORTED GLOBAL)
+    target_link_libraries(AndroidDxvk::D3D9 INTERFACE AndroidDxvk::Headers)
+
+    add_custom_target(android_dxvk_runtime ALL
+        DEPENDS ${android_dxvk_v1_package} ${android_dxvk_v2_package})
+    set(ANDROID_DXVK_RUNTIME_TARGET android_dxvk_runtime PARENT_SCOPE)
 endfunction()
