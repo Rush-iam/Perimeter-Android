@@ -64,6 +64,8 @@
 - The commit-splitting plan is a working artifact and must never be included in a proposed commit or committed to the repository.
 - Prefix each title with its category icon and category tag. Because this is the Android project, omit the redundant `[Android]` tag from its commits; use `[Android]` only when a mixed-scope repository needs to distinguish Android-only work.
 - Make every commit description standalone and describe the completed change. Do not include instructions about what to perform, test, stage, validate, or fix, and do not make a commit description depend on another commit's description.
+- Write each commit description in imperative mood, beginning with a command such as `Add`, `Update`, `Remove`, or `Fix` rather than a third-person form such as `Adds` or `Updates`.
+- In the plan document, make the first paragraph under each proposed commit the exact standalone commit description; do not add a label such as `Standalone description:` before it.
 - Include file and line-number references for every proposed commit. Split mixed-purpose files at hunk level, and exclude whitespace-only or no-op changes from functional commits.
 - Keep dependency-aware ordering, cross-repository prerequisites, and review notes outside commit descriptions. Treat the described changes as already tested unless the user explicitly asks for a testing plan.
 
