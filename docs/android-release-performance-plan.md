@@ -40,7 +40,7 @@ is unavoidable.
 - [ ] Warm the device before each run and measure sustained performance, not
   only cold-start performance.
 - [ ] Repeat each test enough times to identify run-to-run variance.
-- [ ] Save the device model, Android version, NDK version, renderer flavor,
+- [ ] Save the device model, Android version, NDK version, renderer selection,
   build revision, and exact build options with every result.
 - [ ] Retain a symbolized RelWithDebInfo profiling build alongside the stripped
   Release build.
@@ -74,7 +74,7 @@ is unavoidable.
 - [ ] Compare build/link time, native-library size, APK size, startup time,
   frame-time percentiles, and sustained CPU performance against the control.
 - [ ] Keep ThinLTO enabled by default only if the measured release benefit
-  justifies its build cost and remains stable in both renderer flavors.
+  justifies its build cost and remains stable with both renderer selections.
 
 ## Phase 4: Enable Android app optimization
 
@@ -82,7 +82,7 @@ is unavoidable.
 - [ ] Add `.keep` rules for any JNI, reflection, or dynamically referenced Java
   and Kotlin classes that require them.
 - [ ] Test all Activity entry points, JNI registration, native library loading,
-  menus, content launch flows, and renderer flavors.
+  menus, content launch flows, and renderer selections.
 - [ ] Compare APK/AAB size, startup time, and Java/Kotlin runtime behavior.
 - [ ] Confirm native engine frame performance separately; R8/resource
   optimization is not expected to materially accelerate native game loops.
@@ -101,7 +101,7 @@ is unavoidable.
 - [ ] Build the optimized release with `-fprofile-use`.
 - [ ] Treat missing or badly outdated profile data as a clear build error or
   explicit fallback, rather than silently producing an unknown configuration.
-- [ ] Record the source revision, benchmark revision, renderer flavor, and NDK
+- [ ] Record the source revision, benchmark revision, renderer selection, and NDK
   version associated with each profile.
 - [ ] Compare PGO against the best non-PGO Release configuration.
 
@@ -109,7 +109,7 @@ is unavoidable.
 
 - [ ] Keep the general Android release on the portable `arm64-v8a` baseline.
 - [ ] Do not add Quest-specific `-mcpu` or architecture-extension flags to the
-  general Android flavor.
+  general Android build.
 - [ ] Add a separate, clearly named Quest 3 optimization configuration only
   when Quest hardware testing begins.
 - [ ] Verify that any Quest-specific instructions are supported across every
@@ -164,7 +164,7 @@ Run the following matrix after each compiler, linker, or PGO change:
 For every tested configuration, record:
 
 - [ ] Exact compiler and linker flags.
-- [ ] Build variant and renderer flavor.
+- [ ] Build variant and renderer selection.
 - [ ] Binary and package sizes.
 - [ ] Build and link duration.
 - [ ] Runtime benchmark results and variance.

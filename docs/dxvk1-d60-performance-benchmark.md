@@ -22,7 +22,7 @@ must be tested one at a time against a fresh D60 control.
 
 | Field | Value |
 | --- | --- |
-| APK | `sokolDxvk1Debug` |
+| APK | `debug` build (`app-debug.apk`), runtime DXVK 1 |
 | Device | Huawei SCM-W09, Android 10, 60 Hz |
 | System power mode | Huawei **Performance** mode enabled manually before each session |
 | Graphics profile | Max |

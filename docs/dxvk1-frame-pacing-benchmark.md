@@ -21,7 +21,7 @@ resolution scale, frame-rate setting, or graphics profile.
 
 | Field | Value |
 | --- | --- |
-| APK | `sokolDxvk1Debug` |
+| APK | `debug` build (`app-debug.apk`), runtime DXVK 1 |
 | Device | Huawei SCM-W09, Android 10, 60 Hz |
 | Graphics profile | Fast |
 | Resolution scale | 75% |

@@ -19,6 +19,16 @@
 - **Min SDK:** 29 (Android 10).
 - **Target SDK:** 37 (Android 15).
 
+### Gradle from the Codex Sandbox
+- The sandbox PowerShell environment may expose Java's `user.home` as the filesystem root. Use the repository cache and quote the Java user-home argument so the Windows Gradle wrapper passes it through correctly:
+  ```powershell
+  $env:GRADLE_USER_HOME = Join-Path (Get-Location) '.gradle'
+  .\gradlew.bat "-Duser.home=$env:USERPROFILE" --no-daemon :app:assembleDebug --console=plain
+  ```
+- For a connected-device install, use the same environment and replace `:app:assembleDebug` with `:app:installDebug`. Set `$env:HOME = $env:USERPROFILE` before invoking `adb` if it reports `Cannot mkdir '\.android': Permission denied`.
+- Leave `ANDROID_USER_HOME` and `ANDROID_SDK_HOME` unset. `-Duser.home=$env:USERPROFILE` keeps Android tooling and debug signing pointed at the normal `%USERPROFILE%\.android` location; do not redirect them to a repository or sandbox-local keystore.
+- If the sandbox denies access to `%USERPROFILE%\.android`, rerun the same Gradle command with elevated execution rather than redirecting Android's user directory or debug keystore.
+
 ### Signing and Device Installs
 - Use Android Studio's default debug keystore at `%USERPROFILE%\.android\debug.keystore` for debug APKs installed on the configured Android device.
 - The debug key alias is `androiddebugkey`. Keep the keystore outside the repository; do not substitute a repository-local or sandbox-local debug keystore.
@@ -39,7 +49,7 @@
 - **Namespace:** `com.queststoredb.perimeter`.
 
 ### Frame-Pacing Benchmark Workflow
-- Use the Android Studio-installed `sokolDxvk1Debug` build and the established scripts under `scripts/frame-pacing/`.
+- Use the Android Studio-installed `debug` build and the established scripts under `scripts/frame-pacing/`.
 - After restarting `ContentActivity`, wait **2 seconds** for the launcher, tap **Play**, then wait **16 seconds after that tap** for the game main menu. Do not run `Start-TutorialBenchmark.ps1` while the launcher is still visible.
 - Start `Start-TutorialBenchmark.ps1` from the game's top menu with `-InitialMenuSeconds 0 -TransitionSeconds 2`; use the established mission-load wait and verify the gameplay HUD before capture. The script's menu navigation must not begin from the launcher or a submenu.
 - `Capture-FramePacingRun.ps1` defaults to a **10-second warm-up**. The controlled zoom case is 1.5 seconds out, 1.5 seconds in, repeated seven times; capture it from a fresh Tutorial mission.
@@ -50,6 +60,8 @@
 - Respect the requested change state exactly: use `git diff --cached` for staged changes and `git diff` for unstaged tracked changes. Do not stage, unstage, commit, or otherwise alter the index while preparing the plan.
 - If the requested repository/state has no changes, report that fact instead of analyzing another repository or change state.
 - Write or update a plan document in the inspected repository, with proposed commits grouped and sorted by category. Use these category icons consistently: `🛠️` build, `🐛` bugfix, `🕹️` controls, `🎨` graphics, `📝` logging, `🚀` optimization, `♻️` refactoring, `🧹` cleanup, `📚` docs, `🧪` testing, `🧰` tooling, and `📊` benchmark.
+- Review every proposed commit for correctness, regressions, and bugs before presenting the plan. Inspect the complete diff assigned to each commit, including interactions across commit boundaries and nested repositories; record findings in the plan and revise the proposed boundaries or descriptions when needed.
+- The commit-splitting plan is a working artifact and must never be included in a proposed commit or committed to the repository.
 - Prefix each title with its category icon and category tag. Because this is the Android project, omit the redundant `[Android]` tag from its commits; use `[Android]` only when a mixed-scope repository needs to distinguish Android-only work.
 - Make every commit description standalone and describe the completed change. Do not include instructions about what to perform, test, stage, validate, or fix, and do not make a commit description depend on another commit's description.
 - Include file and line-number references for every proposed commit. Split mixed-purpose files at hunk level, and exclude whitespace-only or no-op changes from functional commits.
