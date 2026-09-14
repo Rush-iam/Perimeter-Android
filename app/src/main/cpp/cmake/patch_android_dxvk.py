@@ -23,6 +23,38 @@ def replace(relative_path, old, new):
     path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
 
 
+def replace_android_surface_recovery(relative_path, old, new):
+    """Install one canonical surface-recovery function across patch versions."""
+    path = root / relative_path
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        return
+    if text.count(old) == 1:
+        path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
+        return
+
+    marker = "#if defined(__ANDROID__)\n  VkResult Presenter::refreshAndroidSurface() {"
+    if text.count(marker) != 1:
+        raise RuntimeError(
+            f"Unexpected pinned DXVK source in {relative_path}: {old!r}")
+
+    start = text.index(marker)
+    canonical_end = new.index("\n\n\n  VkResult Presenter::acquireNextImage")
+    canonical = new[:canonical_end]
+    end = text.index("#endif", start) + len("#endif")
+    region = text[start:end]
+    # This is deliberately limited to the function previously emitted by this
+    # patch. Any unrelated source change still fails instead of being erased.
+    if "destroySwapchain();" not in region or "destroySurface();" not in region:
+        raise RuntimeError(
+            f"Unexpected generated surface recovery in {relative_path}: "
+            f"{region!r}")
+    path.write_text(
+        text[:start] + canonical + text[end:],
+        encoding="utf-8",
+        newline="\n")
+
+
 def replace_prefer_old(relative_path, old, new):
     """Replace an old form even when the new form is a substring of it."""
     path = root / relative_path
@@ -96,10 +128,221 @@ def normalize_queue_includes(relative_path):
 #endif
 
 '''
-    path.write_text(
-        text[:begin] + canonical + text[finish:],
-        encoding="utf-8",
-        newline="\n")
+    normalized = text[:begin] + canonical + text[finish:]
+    if normalized != text:
+        path.write_text(normalized, encoding="utf-8", newline="\n")
+
+
+def normalize_d3d9_android_includes(relative_path):
+    """Collapse duplicate Android includes from older patch orderings."""
+    path = root / relative_path
+    text = path.read_text(encoding="utf-8")
+    start = '#include "d3d9_hud.h"\n'
+    end = "namespace dxvk {"
+    if start not in text or end not in text:
+        return
+
+    begin = text.index(start)
+    finish = text.index(end, begin)
+    region = text[begin:finish]
+    timing = '#include "../vulkan/vulkan_android_timing.h"'
+    if timing not in region:
+        return
+
+    allowed_lines = {
+        '#include "d3d9_hud.h"',
+        timing,
+        "#if defined(__ANDROID__)",
+        "#include <cstdlib>",
+        "#include <SDL_events.h>",
+        "#endif",
+        "",
+    }
+    if any(line not in allowed_lines for line in region.splitlines()):
+        raise RuntimeError(
+            f"Unexpected generated include region in {relative_path}: {region!r}")
+
+    canonical = '''#include "d3d9_hud.h"
+
+#include "../vulkan/vulkan_android_timing.h"
+
+#if defined(__ANDROID__)
+#include <cstdlib>
+#include <SDL_events.h>
+#endif
+
+'''
+    normalized = text[:begin] + canonical + text[finish:]
+    if normalized != text:
+        path.write_text(normalized, encoding="utf-8", newline="\n")
+
+
+def normalize_presenter_android_includes(relative_path):
+    """Collapse duplicate presenter includes from older patch orderings."""
+    path = root / relative_path
+    text = path.read_text(encoding="utf-8")
+    start = '#include "vulkan_presenter.h"\n'
+    end = '#include "../dxvk/dxvk_format.h"\n'
+    if start not in text or end not in text:
+        return
+
+    begin = text.index(start)
+    finish = text.index(end, begin)
+    region = text[begin:finish]
+    timing = '#include "vulkan_android_timing.h"'
+    if timing not in region:
+        return
+
+    allowed_lines = {
+        '#include "vulkan_presenter.h"',
+        timing,
+        "#if defined(__ANDROID__)",
+        "#include <cstdlib>",
+        "#include <SDL_system.h>",
+        "#include <SDL_syswm.h>",
+        "#include <swappy/swappyVk.h>",
+        '#include "../dxvk/dxvk_device.h"',
+        "#endif",
+        "",
+    }
+    if any(line not in allowed_lines for line in region.splitlines()):
+        raise RuntimeError(
+            f"Unexpected generated include region in {relative_path}: {region!r}")
+
+    canonical = '''#include "vulkan_presenter.h"
+
+#include "vulkan_android_timing.h"
+
+#if defined(__ANDROID__)
+#include <cstdlib>
+#include <SDL_system.h>
+#include <SDL_syswm.h>
+#include <swappy/swappyVk.h>
+#include "../dxvk/dxvk_device.h"
+#endif
+
+'''
+    normalized = text[:begin] + canonical + text[finish:]
+    if normalized != text:
+        path.write_text(normalized, encoding="utf-8", newline="\n")
+
+
+def normalize_presenter_android_header(relative_path):
+    """Collapse duplicate Android presenter declarations/members from old patches."""
+    path = root / relative_path
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    declaration_anchor = """    VkResult recreateSwapChain(
+      const PresenterDesc&  desc);"""
+    declaration_end = "    void setFrameRateLimit(double frameRate);"
+    if declaration_anchor in text and declaration_end in text:
+        begin = text.index(declaration_anchor) + len(declaration_anchor)
+        finish = text.index(declaration_end, begin)
+        region = text[begin:finish]
+        if "refreshAndroidSurface" in region:
+            first = region.index("#if defined(__ANDROID__)")
+            prefix = region[:first]
+            canonical = """
+
+#if defined(__ANDROID__)
+    VkResult refreshAndroidSurface();
+    void invalidateAndroidSurface();
+    void resumeAndroidSurface();
+    bool androidSurfacePaused() const { return m_androidSurfacePaused; }
+    bool androidSurfaceNeedsRefresh() const { return m_androidNativeWindow == nullptr; }
+#endif
+
+"""
+            text = text[:begin] + prefix + canonical + text[finish:]
+
+    member_anchor = "    HWND              m_window      = nullptr;"
+    member_end = "    VkSurfaceKHR      m_surface     = VK_NULL_HANDLE;"
+    if member_anchor in text and member_end in text:
+        begin = text.index(member_anchor)
+        finish = text.index(member_end, begin)
+        region = text[begin:finish]
+        if "m_androidNativeWindow" in region:
+            canonical = """    HWND              m_window      = nullptr;
+
+#if defined(__ANDROID__)
+    void*               m_androidNativeWindow = nullptr;
+    PresenterDesc       m_androidSwapChainDesc = { };
+    bool                m_androidSurfacePaused = false;
+#endif
+
+"""
+            text = text[:begin] + canonical + text[finish:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def normalize_d3d9_android_header(relative_path):
+    """Keep the D3D9 Android lifecycle declarations in one block."""
+    path = root / relative_path
+    text = path.read_text(encoding="utf-8")
+    anchor = "    ~D3D9SwapChainEx();"
+    end = "    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);"
+    if anchor not in text or end not in text:
+        return
+
+    begin = text.index(anchor) + len(anchor)
+    finish = text.index(end, begin)
+    region = text[begin:finish]
+    if "OnAndroidPause" not in region:
+        return
+
+    canonical = """
+
+#if defined(__ANDROID__)
+    void OnAndroidPause();
+    void OnAndroidResume();
+#endif
+
+"""
+    normalized = text[:begin] + canonical + text[finish:]
+    if normalized != text:
+        path.write_text(normalized, encoding="utf-8", newline="\n")
+
+
+def normalize_d3d9_android_lifecycle(relative_path):
+    """Keep the D3D9 Android watch/handler block canonical and idempotent."""
+    path = root / relative_path
+    text = path.read_text(encoding="utf-8")
+    constructor_anchor = """    if (!m_presentParams.Windowed && FAILED(EnterFullscreenMode(pPresentParams, pFullscreenDisplayMode)))
+      throw DxvkError("D3D9: Failed to set initial fullscreen state");"""
+    destructor = "  D3D9SwapChainEx::~D3D9SwapChainEx() {"
+    if constructor_anchor not in text or destructor not in text:
+        return
+
+    constructor_start = text.index(constructor_anchor)
+    replace_start = text.index("\n", constructor_start + len(constructor_anchor))
+    destructor_start = text.index(destructor, replace_start)
+    canonical = """
+#if defined(__ANDROID__)
+    SDL_AddEventWatch(DxvkAndroidPauseEventWatch, this);
+#endif
+  }
+
+
+  void D3D9SwapChainEx::OnAndroidPause() {
+    if (m_presenter != nullptr)
+      m_presenter->invalidateAndroidSurface();
+    else
+      m_device->waitForIdle();
+  }
+
+  void D3D9SwapChainEx::OnAndroidResume() {
+    if (m_presenter != nullptr)
+      m_presenter->resumeAndroidSurface();
+  }
+
+
+"""
+    normalized = text[:replace_start] + canonical + text[destructor_start:]
+    if normalized != text:
+        path.write_text(normalized, encoding="utf-8", newline="\n")
 
 
 def replace_one_of(relative_path, alternatives, new):
@@ -235,6 +478,23 @@ def patch_v2():
 def patch_v1():
     """Patch the legacy DXVK 1.x fork used by the native compatibility path."""
     rename_d3d9_library(1)
+    normalize_presenter_android_header("src/vulkan/vulkan_presenter.h")
+    normalize_presenter_android_includes("src/vulkan/vulkan_presenter.cpp")
+    replace("src/vulkan/vulkan_presenter.h",
+            "namespace dxvk::vk {\n",
+            """namespace dxvk {
+  class DxvkDevice;
+}
+
+namespace dxvk::vk {
+""")
+    replace("src/vulkan/vulkan_presenter.h",
+            "    PresenterFeatures   features    = { };",
+            """    PresenterFeatures   features    = { };
+
+#if defined(__ANDROID__)
+    dxvk::DxvkDevice* dxvkDevice = nullptr;
+#endif""")
     # Android replaces the SurfaceView's ANativeWindow when an activity is
     # restored. The native DXVK 1.x presenter otherwise keeps the Vulkan
     # surface created for the old window and can block in vkAcquireNextImageKHR
@@ -249,6 +509,10 @@ def patch_v1():
 
 #if defined(__ANDROID__)
     VkResult refreshAndroidSurface();
+    void invalidateAndroidSurface();
+    void resumeAndroidSurface();
+    bool androidSurfacePaused() const { return m_androidSurfacePaused; }
+    bool androidSurfaceNeedsRefresh() const { return m_androidNativeWindow == nullptr; }
 #endif""")
     replace("src/vulkan/vulkan_presenter.h",
             "    HWND              m_window      = nullptr;",
@@ -257,12 +521,16 @@ def patch_v1():
 #if defined(__ANDROID__)
     void*               m_androidNativeWindow = nullptr;
     PresenterDesc       m_androidSwapChainDesc = { };
+    bool                m_androidSurfacePaused = false;
 #endif""")
-    replace("src/vulkan/vulkan_presenter.cpp",
+    replace_android_surface_recovery("src/vulkan/vulkan_presenter.cpp",
             """  VkResult Presenter::acquireNextImage(PresenterSync& sync, uint32_t& index) {
     sync = m_semaphores.at(m_frameIndex);""",
             """#if defined(__ANDROID__)
   VkResult Presenter::refreshAndroidSurface() {
+    if (m_androidSurfacePaused)
+      return VK_NOT_READY;
+
     SDL_SysWMinfo wmInfo { };
     SDL_VERSION(&wmInfo.version);
 
@@ -272,6 +540,21 @@ def patch_v1():
 
     if (nativeWindow == m_androidNativeWindow)
       return nativeWindow ? VK_SUCCESS : VK_NOT_READY;
+
+    // The present status only tells us that the present operation was queued.
+    // Command lists submitted for the old swapchain may still be waiting on
+    // their fences, so the old swapchain, semaphores, and surface cannot be
+    // destroyed until the device is idle. Destroying them first can make the
+    // Android driver report VK_ERROR_DEVICE_LOST on the finish thread.
+    if (m_swapchain || m_surface) {
+      if (m_device.dxvkDevice) {
+        m_device.dxvkDevice->waitForIdle();
+      } else {
+        VkResult idleStatus = m_vkd->vkDeviceWaitIdle(m_vkd->device());
+        if (idleStatus != VK_SUCCESS)
+          return idleStatus;
+      }
+    }
 
     if (m_swapchain)
       destroySwapchain();
@@ -427,10 +710,58 @@ void record(const char* event, uint64_t startNs, uint64_t endNs, int32_t status)
 #include <SDL_system.h>
 #include <SDL_syswm.h>
 #include <swappy/swappyVk.h>
+#include "../dxvk/dxvk_device.h"
 #endif''')
+    remove_optional("src/vulkan/vulkan_presenter.cpp",
+        """#if defined(__ANDROID__)
+  void Presenter::invalidateAndroidSurface() {
+    if (m_device.dxvkDevice)
+      m_device.dxvkDevice->waitForIdle();
+
+    // Do not leave handles that refer to the old Android BufferQueue alive
+    // across surfaceDestroyed(). The next acquire will create a fresh
+    // surface and swap chain for the resumed SurfaceView.
+    if (m_swapchain)
+      destroySwapchain();
+    if (m_surface)
+      destroySurface();
+    m_androidNativeWindow = nullptr;
+  }
+#endif
+
+""")
+    remove_optional("src/vulkan/vulkan_presenter.cpp",
+        """#if defined(__ANDROID__)
+  void Presenter::invalidateAndroidSurface() {
+    if (m_device.dxvkDevice)
+      m_device.dxvkDevice->waitForIdle();
+    m_androidNativeWindow = nullptr;
+  }
+#endif
+
+""")
     replace("src/vulkan/vulkan_presenter.cpp",
-            "#include <SDL_system.h>\n#include <swappy/swappyVk.h>",
-            "#include <SDL_system.h>\n#include <SDL_syswm.h>\n#include <swappy/swappyVk.h>")
+            """#endif
+
+
+  VkResult Presenter::acquireNextImage(PresenterSync& sync, uint32_t& index) {""",
+            """#endif
+
+#if defined(__ANDROID__)
+  void Presenter::invalidateAndroidSurface() {
+    if (m_device.dxvkDevice)
+      m_device.dxvkDevice->waitForIdle();
+    m_androidNativeWindow = nullptr;
+    m_androidSurfacePaused = true;
+  }
+
+  void Presenter::resumeAndroidSurface() {
+    m_androidSurfacePaused = false;
+  }
+#endif
+
+
+  VkResult Presenter::acquireNextImage(PresenterSync& sync, uint32_t& index) {""")
     replace("src/vulkan/vulkan_presenter.cpp",
             "    VkResult status = m_vkd->vkQueuePresentKHR(m_device.queue, &info);",
             """#if defined(__ANDROID__)
@@ -626,6 +957,18 @@ void record(const char* event, uint64_t startNs, uint64_t endNs, int32_t status)
             vk::android_timing::nowNs(), static_cast<int32_t>(status));
 #endif
         } else if (entry.present.presenter != nullptr) {""")
+    normalize_d3d9_android_includes("src/d3d9/d3d9_swapchain.cpp")
+    normalize_d3d9_android_header("src/d3d9/d3d9_swapchain.h")
+    remove_optional("src/d3d9/d3d9_swapchain.cpp",
+        """#if defined(__ANDROID__)
+  static int DxvkAndroidPauseEventWatch(void* userdata, SDL_Event* event) {
+    if (event->type == SDL_APP_WILLENTERBACKGROUND)
+      static_cast<DxvkDevice*>(userdata)->waitForIdle();
+    return 0;
+  }
+#endif
+
+""")
     replace("src/d3d9/d3d9_swapchain.cpp",
             '#include "d3d9_hud.h"',
             '''#include "d3d9_hud.h"
@@ -634,7 +977,112 @@ void record(const char* event, uint64_t startNs, uint64_t endNs, int32_t status)
 
 #if defined(__ANDROID__)
 #include <cstdlib>
+#include <SDL_events.h>
 #endif''')
+    remove_optional("src/d3d9/d3d9_swapchain.cpp",
+        """#if defined(__ANDROID__)
+  static int DxvkAndroidPauseEventWatch(void* userdata, SDL_Event* event) {
+    if (event->type == SDL_APP_WILLENTERBACKGROUND)
+      static_cast<D3D9SwapChainEx*>(userdata)->OnAndroidPause();
+    return 0;
+  }
+#endif
+
+""")
+    replace("src/d3d9/d3d9_swapchain.cpp",
+            "namespace dxvk {\n",
+            """namespace dxvk {
+
+#if defined(__ANDROID__)
+  static int DxvkAndroidPauseEventWatch(void* userdata, SDL_Event* event) {
+    if (event->type == SDL_APP_WILLENTERBACKGROUND)
+      static_cast<D3D9SwapChainEx*>(userdata)->OnAndroidPause();
+    else if (event->type == SDL_APP_WILLENTERFOREGROUND)
+      static_cast<D3D9SwapChainEx*>(userdata)->OnAndroidResume();
+    return 0;
+  }
+#endif
+""")
+    replace("src/d3d9/d3d9_swapchain.h",
+            "    ~D3D9SwapChainEx();",
+            """    ~D3D9SwapChainEx();
+
+#if defined(__ANDROID__)
+    void OnAndroidPause();
+    void OnAndroidResume();
+#endif""")
+    replace_optional("src/d3d9/d3d9_swapchain.cpp",
+        """#if defined(__ANDROID__)
+    SDL_DelEventWatch(DxvkAndroidPauseEventWatch, m_device.ptr());
+#endif
+""",
+        """#if defined(__ANDROID__)
+    SDL_DelEventWatch(DxvkAndroidPauseEventWatch, this);
+#endif
+""")
+    normalize_d3d9_android_lifecycle("src/d3d9/d3d9_swapchain.cpp")
+    replace("src/d3d9/d3d9_swapchain.cpp",
+            """  D3D9SwapChainEx::~D3D9SwapChainEx() {
+    DestroyBackBuffers();""",
+            """  D3D9SwapChainEx::~D3D9SwapChainEx() {
+#if defined(__ANDROID__)
+    SDL_DelEventWatch(DxvkAndroidPauseEventWatch, this);
+#endif
+    DestroyBackBuffers();""")
+    replace("src/d3d9/d3d9_swapchain.cpp",
+            "    presenterDevice.adapter       = m_device->adapter()->handle();",
+            """    presenterDevice.adapter       = m_device->adapter()->handle();
+#if defined(__ANDROID__)
+    presenterDevice.dxvkDevice = m_device.ptr();
+#endif""")
+    replace_optional("src/d3d9/d3d9_swapchain.cpp",
+            """  void D3D9SwapChainEx::PresentImage(UINT SyncInterval) {
+    m_parent->Flush();
+
+#if defined(__ANDROID__)
+    if (m_presenter->androidSurfacePaused())
+      return;
+    if (m_presenter->androidSurfaceNeedsRefresh()) {
+      if (m_presenter->refreshAndroidSurface() != VK_SUCCESS)
+        return;
+      CreateRenderTargetViews();
+    }
+#endif
+
+    // Retrieve the image and image view to present""",
+            """  void D3D9SwapChainEx::PresentImage(UINT SyncInterval) {
+#if defined(__ANDROID__)
+    if (m_presenter->androidSurfacePaused())
+      return;
+    if (m_presenter->androidSurfaceNeedsRefresh()) {
+      if (m_presenter->refreshAndroidSurface() != VK_SUCCESS)
+        return;
+      CreateRenderTargetViews();
+    }
+#endif
+
+    m_parent->Flush();
+
+    // Retrieve the image and image view to present""")
+    replace("src/d3d9/d3d9_swapchain.cpp",
+            """  void D3D9SwapChainEx::PresentImage(UINT SyncInterval) {
+    m_parent->Flush();
+
+    // Retrieve the image and image view to present""",
+            """  void D3D9SwapChainEx::PresentImage(UINT SyncInterval) {
+#if defined(__ANDROID__)
+    if (m_presenter->androidSurfacePaused())
+      return;
+    if (m_presenter->androidSurfaceNeedsRefresh()) {
+      if (m_presenter->refreshAndroidSurface() != VK_SUCCESS)
+        return;
+      CreateRenderTargetViews();
+    }
+#endif
+
+    m_parent->Flush();
+
+    // Retrieve the image and image view to present""")
     replace("src/d3d9/d3d9_swapchain.cpp",
             """  void D3D9SwapChainEx::SynchronizePresent() {
     // Recreate swap chain if the previous present call failed
@@ -1031,6 +1479,9 @@ LUID GetAdapterLUID(UINT) {
     # The old fork has no android_sdl2_include option; add one for the SDL
     # headers supplied by the application and use it in its native dependency.
     replace("meson_options.txt", "option('enable_tests',", "option('android_sdl2_include', type: 'string', value: '')\noption('android_sdl2_lib', type: 'string', value: '')\noption('android_swappy_include', type: 'string', value: '')\noption('android_swappy_lib', type: 'string', value: '')\noption('enable_tests',")
+    # Keep the final header state canonical even when an older configure run
+    # inserted the Android block before this patch version was complete.
+    normalize_presenter_android_header("src/vulkan/vulkan_presenter.h")
 
 
 if variant == "v2":

@@ -344,6 +344,12 @@ function(android_add_dxvk sdl_include_dir swappy_target)
     _dxvk_ensure_host_tools()
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_sdl.py")
+    execute_process(COMMAND "${ANDROID_DXVK_PYTHON}"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_sdl.py"
+        "${sdl2_SOURCE_DIR}"
+        COMMAND_ERROR_IS_FATAL ANY)
 
     _android_add_dxvk_generation(1 "${sdl_include_dir}" "${swappy_target}")
     set(android_dxvk_v1_headers "${android_dxvk_header_dirs}")

@@ -462,9 +462,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(true);
         }
-        if (!mHasMultiWindow) {
-            pauseNativeThread();
-        }
+        // Some Android window modes destroy the SurfaceView even while the
+        // activity remains in multi-window mode. Pause native rendering here
+        // so it cannot submit work after the surface teardown has started.
+        pauseNativeThread();
     }
 
     @Override
