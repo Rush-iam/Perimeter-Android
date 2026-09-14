@@ -1,13 +1,14 @@
 <resources>
     <string name="app_name">Perimeter</string>
     <string name="content_instructions">Choose the game folder containing Perimeter.ini.</string>
-    <string name="build_note">Build %1$s (Perimeter %2$s)</string>
+    <string name="build_note">v%1$s/%2$s</string>
+    <string name="android_port_by">Android port by Rush_iam</string>
     <string name="choose_content">Choose game folder</string>
     <string name="play">Play</string>
     <string name="launch_arguments">Launch options</string>
     <string name="render_resolution">Resolution</string>
-    <string name="render_resolution_value">Resolution: %1$d × %2$d</string>
-    <string name="limit_frame_rate_to">Limit frame rate to %1$d FPS</string>
+    <string name="render_resolution_value">%1$d × %2$d</string>
+    <string name="limit_frame_rate_to">Limit FPS to %1$d</string>
     <string name="save_launch_arguments">Save</string>
     <string name="checking_content">Checking game folder…</string>
     <string name="content_ready_path">Game folder: %1$s</string>

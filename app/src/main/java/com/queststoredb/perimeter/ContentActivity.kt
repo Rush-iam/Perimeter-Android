@@ -11,10 +11,15 @@ import android.os.Bundle
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.view.Gravity
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.ScrollView
 import android.view.View
@@ -32,8 +37,14 @@ class ContentActivity : Activity() {
         storage = GameContentStorage(this)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             val padding = (24 * resources.displayMetrics.density).toInt()
-            setPadding(padding, padding, padding, padding)
+            setPadding(
+                padding,
+                padding,
+                padding,
+                resources.getDimensionPixelSize(R.dimen.launcher_bottom_padding)
+            )
         }
         status = TextView(this)
         choose = Button(this)
@@ -43,25 +54,84 @@ class ContentActivity : Activity() {
             setOnClickListener { startGameIfReady() }
             measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, measuredHeight * 3)
+                LinearLayout.LayoutParams.MATCH_PARENT, measuredHeight * 3 / 2)
         }
-        layout.addView(status)
-        layout.addView(choose)
-        layout.addView(Button(this).apply {
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.argb(178, 0, 0, 0))
+            elevation = dp(MAIN_CONTROLS_ELEVATION_DP).toFloat()
+            layoutParams = LinearLayout.LayoutParams(dp(MAIN_CONTROLS_WIDTH_DP),
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        controls.addView(play)
+        controls.addView(Button(this).apply {
             setText(R.string.launch_arguments)
             setOnClickListener { showLaunchOptionsEditor() }
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topMargin = dp(MAIN_ENTRY_SPACING_DP)
         })
-        addResolutionScaleControl(layout)
-        addFrameRateLimitControl(layout)
-        layout.addView(play)
+        addResolutionScaleControl(controls)
+        addFrameRateLimitControl(controls)
+        layout.addView(controls)
         buildNote = TextView(this).apply {
             textSize = 12f
-            setTextColor(Color.GRAY)
+            setTextColor(Color.argb(204, 255, 255, 255))
+            gravity = Gravity.END
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            val shadowOffset = resources.displayMetrics.density
+            paint.setShadowLayer(
+                shadowOffset,
+                0f,
+                shadowOffset,
+                Color.argb(96, 0, 0, 0)
+            )
         }
-        layout.addView(buildNote)
+        layout.addView(buildNote, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
         GameLaunchOptions(this).ensureRendererSelected()
         refreshBuildNote()
-        setContentView(ScrollView(this).apply { addView(layout) })
+        val content = ScrollView(this).apply {
+            isFillViewport = true
+            addView(layout)
+        }
+        setContentView(FrameLayout(this).apply {
+            addView(ImageView(this@ContentActivity).apply {
+                setImageResource(R.drawable.launcher_background)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = null
+            }, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+            addView(View(this@ContentActivity).apply {
+                setBackgroundResource(R.drawable.launcher_vignette)
+            }, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+            addView(ImageView(this@ContentActivity).apply {
+                setImageResource(R.drawable.launcher_logo)
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                contentDescription = null
+            }, FrameLayout.LayoutParams(
+                minOf(dp(MAX_LOGO_WIDTH_DP),
+                    resources.displayMetrics.widthPixels -
+                        (resources.displayMetrics.widthPixels * LOGO_SIDE_MARGIN_RATIO).toInt() * 2),
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                topMargin = resources.getDimensionPixelSize(R.dimen.logo_top_margin)
+            })
+            addView(content, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+        })
         refresh()
         if (savedInstanceState == null && Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
             !storage.hasStorageAccess()) {
@@ -86,36 +156,59 @@ class ContentActivity : Activity() {
     }
 
     private fun addResolutionScaleControl(layout: LinearLayout) {
-        val label = TextView(this)
-        val slider = SeekBar(this).apply {
-            max = ResolutionScale.percentages.lastIndex
-            progress = ResolutionScale.percentages.indexOf(ResolutionScale.load(this@ContentActivity))
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(MAIN_ENTRY_SPACING_DP)
+            }
+        }
+        val label = TextView(this).apply {
+            text = "${getString(R.string.render_resolution)}:"
+        }
+        val choices = ResolutionScale.percentages.map { percent ->
+            val size = ResolutionScale.renderSize(this, percent)
+            getString(R.string.render_resolution_value, size.first, size.second)
+        }
+        val selector = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ContentActivity, android.R.layout.simple_spinner_item, choices).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
             contentDescription = getString(R.string.render_resolution)
+            setSelection(ResolutionScale.percentages.indexOf(ResolutionScale.load(this@ContentActivity)).coerceAtLeast(0))
         }
 
-        fun updateLabel(progress: Int) {
-            val percent = ResolutionScale.percentages[progress]
-            val size = ResolutionScale.renderSize(this@ContentActivity, percent)
-            label.text = getString(R.string.render_resolution_value, size.first, size.second)
-        }
-
-        updateLabel(slider.progress)
-        slider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                updateLabel(progress)
-                if (fromUser) ResolutionScale.save(this@ContentActivity,
-                    ResolutionScale.percentages[progress])
+        selector.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                ResolutionScale.save(this@ContentActivity, ResolutionScale.percentages[position])
             }
 
-            override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
-            override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
-        })
-        layout.addView(label)
-        layout.addView(slider)
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+        row.addView(label, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        row.addView(selector, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        layout.addView(row)
     }
 
     private fun addFrameRateLimitControl(layout: LinearLayout) {
-        layout.addView(CheckBox(this).apply {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(MAIN_ENTRY_SPACING_DP)
+            }
+        }
+        row.addView(CheckBox(this).apply {
             text = getString(
                 R.string.limit_frame_rate_to,
                 FrameRateLimit.displayedFramesPerSecond(this@ContentActivity)
@@ -125,6 +218,7 @@ class ContentActivity : Activity() {
                 FrameRateLimit.save(this@ContentActivity, checked)
             }
         })
+        layout.addView(row)
     }
 
     private fun refreshBuildNote() {
@@ -137,7 +231,7 @@ class ContentActivity : Activity() {
         }
         buildNote.text = getString(
             R.string.build_note, BuildConfig.VERSION_NAME, BuildConfig.PERIMETER_VERSION
-        ) + "\nRenderer: $renderer"
+        ) + " • $renderer\n" + getString(R.string.android_port_by)
     }
 
     private fun chooseOrGrantAccess() {
@@ -296,7 +390,14 @@ class ContentActivity : Activity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) R.string.grant_storage_access
         else R.string.grant_legacy_storage_access
 
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
     private companion object {
+        const val MAIN_CONTROLS_WIDTH_DP = 300
+        const val MAIN_CONTROLS_ELEVATION_DP = 8
+        const val MAIN_ENTRY_SPACING_DP = 8
+        const val MAX_LOGO_WIDTH_DP = 500
+        const val LOGO_SIDE_MARGIN_RATIO = 0.10f
         const val SELECT_CONTENT = 1
         const val REQUEST_STORAGE = 2
         // VK_MAKE_API_VERSION(0, 1, 1, 0) and VK_MAKE_API_VERSION(0, 1, 3, 0).
