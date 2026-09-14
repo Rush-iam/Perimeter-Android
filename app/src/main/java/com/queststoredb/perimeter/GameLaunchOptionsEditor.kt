@@ -22,7 +22,9 @@ import java.io.File
 internal class GameLaunchOptionsEditor(
     private val activity: Activity,
     original: String,
-    private val save: (String) -> Unit
+    private val save: (String) -> Unit,
+    private val contentStorage: GameContentStorage,
+    private val chooseContent: () -> Unit
 ) {
     private val saved = GameLaunchOptions.parse(original)
         .associateBy { it.removePrefix("tmp_").substringBefore('=') }
@@ -38,10 +40,13 @@ internal class GameLaunchOptionsEditor(
     )
     private val readers = linkedMapOf<String, () -> String?>()
     private val resetters = mutableListOf<() -> Unit>()
+    private var contentStatus: TextView? = null
+    private var chooseContentButton: Button? = null
 
     @Suppress("DEPRECATION") // Platform dialogs still use adjustResize for the software keyboard.
     fun show() {
         val layout = column().apply { setPadding(dp(20), dp(8), dp(20), dp(24)) }
+        addContentFolderControl(layout)
         for ((section, options) in specs.groupBy { it.section }) {
             if (section.isEmpty()) {
                 options.forEach { addOption(layout, it) }
@@ -75,9 +80,8 @@ internal class GameLaunchOptionsEditor(
             .setNegativeButton("Cancel", null)
             .setNeutralButton("Reset", null)
             .create()
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         dialog.setOnShowListener {
-            dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 resetters.forEach { it() }
                 error.visibility = View.GONE
@@ -101,7 +105,50 @@ internal class GameLaunchOptionsEditor(
             }
         }
         dialog.show()
+        dialog.window?.setLayout(
+            minOf(dp(MAX_DIALOG_WIDTH_DP), activity.resources.displayMetrics.widthPixels),
+            WindowManager.LayoutParams.MATCH_PARENT
+        )
     }
+
+    internal fun refreshContent() {
+        val status = contentStatus ?: return
+        val choose = chooseContentButton ?: return
+        if (!contentStorage.hasStorageAccess()) {
+            status.setText(storageAccessMessage())
+            choose.setText(if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R)
+                R.string.grant_access else R.string.grant_legacy_access)
+            return
+        }
+        choose.setText(R.string.choose_content)
+        try {
+            val path = contentStorage.localFilesystemPath()
+            if (path == null) {
+                status.setText(R.string.content_instructions)
+            } else {
+                status.text = activity.getString(R.string.content_ready_path, path)
+            }
+        } catch (error: Exception) {
+            status.text = activity.getString(R.string.content_error, error.localizedMessage)
+        }
+    }
+
+    private fun addContentFolderControl(parent: LinearLayout) {
+        val status = label("", 14f)
+        val choose = Button(activity).apply {
+            setOnClickListener { chooseContent() }
+        }
+        contentStatus = status
+        chooseContentButton = choose
+        parent.addView(status, fullWidth())
+        parent.addView(choose, fullWidth())
+        parent.addView(View(activity).apply { setBackgroundColor(0x33888888) }, LinearLayout.LayoutParams(-1, dp(1)))
+        refreshContent()
+    }
+
+    private fun storageAccessMessage(): Int =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) R.string.grant_storage_access
+        else R.string.grant_legacy_storage_access
 
     private fun addOption(parent: LinearLayout, spec: Option) {
         val row = column().apply { setPadding(dp(8), dp(12), dp(8), dp(16)) }
@@ -124,10 +171,10 @@ internal class GameLaunchOptionsEditor(
                 isEnabled = supported
                 // Presence flags are enabled even when their original value was "0".
                 isChecked = when (spec.kind) {
-                    Kind.FLAG -> old != null
-                    Kind.TOGGLE -> old?.toIntOrNull()?.let { it != 0 } == true
-                    Kind.INVERTED_BOOLEAN -> old == "0"
-                    else -> false
+                    Kind.FLAG -> old != null || spec.defaultChecked
+                    Kind.TOGGLE -> old?.toIntOrNull()?.let { it != 0 } ?: spec.defaultChecked
+                    Kind.INVERTED_BOOLEAN -> old?.let { it == "0" } ?: spec.defaultChecked
+                    else -> spec.defaultChecked
                 }
             }
             row.addView(checkbox, fullWidth())
@@ -138,7 +185,7 @@ internal class GameLaunchOptionsEditor(
                     if (checkbox.isChecked) "0" else null
                 } else if (checkbox.isChecked) old ?: "1" else null
             }
-            resetters += { checkbox.isChecked = false }
+            resetters += { checkbox.isChecked = spec.defaultChecked }
         } else {
             row.addView(label(spec.title, 16f).apply { setTypeface(typeface, Typeface.BOLD) })
             when (spec.kind) {
@@ -164,10 +211,7 @@ internal class GameLaunchOptionsEditor(
                 else -> {
                     val field = EditText(activity).apply {
                         setSingleLine(true)
-                        inputType = when (spec.kind) {
-                            Kind.PASSWORD -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                            else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                        }
+                        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                         hint = spec.valueHint
                         contentDescription = spec.title
                         setText(old ?: "")
@@ -290,7 +334,7 @@ internal class GameLaunchOptionsEditor(
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
     private fun fullWidth() = LinearLayout.LayoutParams(-1, -2)
 
-    private enum class Kind { FLAG, TOGGLE, INVERTED_BOOLEAN, CHOICE, TEXT, PASSWORD, ACTION }
+    private enum class Kind { FLAG, TOGGLE, INVERTED_BOOLEAN, CHOICE, TEXT, ACTION }
     private data class RendererChoice(
         val graph: String,
         val dxvkVersion: String?,
@@ -300,38 +344,20 @@ internal class GameLaunchOptionsEditor(
     private data class Option(val section: String, val key: String, val title: String, val kind: Kind,
                               val description: String = "", val choices: List<Pair<String, String>> = emptyList(),
                               val defaultChoiceLabel: String = "Game default", val valueHint: String? = "Game default",
-                              val defaultChoiceValue: String? = null)
+                              val defaultChoiceValue: String? = null, val defaultChecked: Boolean = false)
 
     private companion object {
         val specs = listOf(
-            Option("", "locale", "Game language", Kind.CHOICE, choices = listOf(
+            Option("", "locale", "Language", Kind.CHOICE, choices = listOf(
                 "English" to "English", "Russian" to "Russian"), defaultChoiceLabel = "Last used"),
-            Option("Gameplay & startup", "start_splash", "Disable intro movies", Kind.INVERTED_BOOLEAN),
-            Option("Gameplay & startup", "disable_sound", "Disable sound", Kind.FLAG),
-            Option("Gameplay & startup", "disableBriefing", "Skip briefings", Kind.FLAG),
-            Option("Gameplay & startup", "pause", "Start paused", Kind.FLAG),
-            Option("Gameplay & startup", "autoSwitchAI", "Autoswitch controls to AI when idle", Kind.FLAG,
-                "After 60 seconds without player input, the active human player becomes AI-controlled. Player input switches control back and resets the timer."),
-            Option("Display & performance", GRAPH_KEY, "Graphics renderer", Kind.CHOICE),
-            Option("Display & performance", "show_fps", "Show FPS counter", Kind.TOGGLE),
-            Option("Display & performance", "HT", "Disable multithreading", Kind.INVERTED_BOOLEAN),
-            Option("Display & performance", "sustained_performance", "Android Sustained Performance Mode", Kind.TOGGLE,
+            Option("", "start_splash", "Disable intro movies", Kind.INVERTED_BOOLEAN),
+            Option("", GRAPH_KEY, "Graphics renderer", Kind.CHOICE),
+            Option("", "show_fps", "Show FPS counter", Kind.TOGGLE),
+            Option("", "sustained_performance", "Android Sustained Performance Mode", Kind.TOGGLE,
                 "Disables boost clocks"),
-            Option("Replays", "saveplay", "Record replay to file", Kind.TEXT, valueHint = null),
-            Option("Replays", "replay", "Replay file", Kind.TEXT, valueHint = null),
-            Option("Replays", "AI", "Replay AI mode", Kind.CHOICE, choices = listOf(
-                "0" to "No AI", "1" to "Normal", "2" to "All AI")),
-            Option("Multiplayer", "name", "Player name", Kind.TEXT, valueHint = null),
-            Option("Multiplayer", "server", "Host address", Kind.TEXT, "IP:port to listen on.", valueHint = null),
-            Option("Multiplayer", "connect", "Join server", Kind.TEXT, "Server IP:port.", valueHint = null),
-            Option("Multiplayer", "connect_room", "Join room ID", Kind.TEXT, valueHint = null),
-            Option("Multiplayer", "room", "Hosted room name", Kind.TEXT, valueHint = null),
-            Option("Multiplayer", "password", "Room password", Kind.PASSWORD, "Saved on this device.", valueHint = null),
-            Option("Multiplayer", "public", "List hosted game publicly", Kind.TOGGLE,
-                "By default, hosted games are private and listen only on their port."),
-            Option("Multiplayer", "netrelay", "Relay server", Kind.TEXT),
-            Option("Multiplayer", "ServerArchMask", "Architecture compatibility mask", Kind.TEXT, "Hexadecimal mask, such as FFFE."),
             Option("Diagnostics", "read_log_file", "Open last log file", Kind.ACTION),
+            Option("Diagnostics", "HT", "Disable multithreading", Kind.INVERTED_BOOLEAN),
+            Option("Diagnostics", "disable_sound", "Disable sound", Kind.FLAG),
             Option("Diagnostics", "console", "Redirect logs to Logcat instead of file", Kind.FLAG,
                 "The log file is not created when enabled."),
             Option("Diagnostics", "frame_timing", "Record frame timing", Kind.TOGGLE,
@@ -340,7 +366,8 @@ internal class GameLaunchOptionsEditor(
                 "Diagnostic override for the DXVK 1 D3D9 submission queue.",
                 choices = listOf("1" to "1 frame"), defaultChoiceLabel = "DXVK default"),
             Option("Diagnostics", "zoom_lod_cache", "Zoom LOD cache", Kind.TOGGLE,
-                "Cache prepared terrain LOD variants for camera zooms on either renderer."),
+                "Cache prepared terrain LOD variants for camera zooms on either renderer.",
+                defaultChecked = true),
             Option("Diagnostics", "content_debug", "Log content loading", Kind.FLAG),
             Option("Diagnostics", "content_dump_debug", "Export content file mapping", Kind.FLAG),
             Option("Diagnostics", "debug_key_handler", "Enable debug keyboard commands", Kind.FLAG),
@@ -354,6 +381,7 @@ internal class GameLaunchOptionsEditor(
         )
 
         const val MAX_LOG_CHARACTERS = 512 * 1024
+        const val MAX_DIALOG_WIDTH_DP = 650
         const val SUSTAINED_PERFORMANCE_KEY = "sustained_performance"
         const val GRAPH_KEY = "graph"
         const val DXVK_VERSION_KEY = "android_dxvk_version"

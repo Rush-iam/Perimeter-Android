@@ -27,10 +27,9 @@ import android.view.View
 /** Selects content, then obtains the raw path required by the native engine. */
 class ContentActivity : Activity() {
     private lateinit var storage: GameContentStorage
-    private lateinit var status: TextView
-    private lateinit var choose: Button
     private lateinit var play: Button
     private lateinit var buildNote: TextView
+    private var launchOptionsEditor: GameLaunchOptionsEditor? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,9 +45,6 @@ class ContentActivity : Activity() {
                 resources.getDimensionPixelSize(R.dimen.launcher_bottom_padding)
             )
         }
-        status = TextView(this)
-        choose = Button(this)
-        choose.setOnClickListener { chooseOrGrantAccess() }
         play = Button(this).apply {
             setText(R.string.play)
             setOnClickListener { startGameIfReady() }
@@ -143,16 +139,19 @@ class ContentActivity : Activity() {
         super.onResume()
         if (::storage.isInitialized) {
             refresh()
+            launchOptionsEditor?.refreshContent()
             refreshBuildNote()
         }
     }
 
     private fun showLaunchOptionsEditor() {
         val options = GameLaunchOptions(this)
-        GameLaunchOptionsEditor(this, options.load()) {
+        val editor = GameLaunchOptionsEditor(this, options.load(), {
             options.save(it)
             refreshBuildNote()
-        }.show()
+        }, storage, ::chooseOrGrantAccess)
+        launchOptionsEditor = editor
+        editor.show()
     }
 
     private fun addResolutionScaleControl(layout: LinearLayout) {
@@ -256,6 +255,7 @@ class ContentActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_STORAGE) return
         refresh()
+        launchOptionsEditor?.refreshContent()
         if (grantResults.isNotEmpty() && !storage.hasStorageAccess() &&
             permissions.indices.any { grantResults[it] != android.content.pm.PackageManager.PERMISSION_GRANTED &&
                 !shouldShowRequestPermissionRationale(permissions[it]) }) {
@@ -298,31 +298,21 @@ class ContentActivity : Activity() {
             contentResolver.takePersistableUriPermission(tree, flags)
             storage.select(tree)
             refresh()
+            launchOptionsEditor?.refreshContent()
         } catch (error: Exception) {
-            status.text = getString(R.string.content_error, error.localizedMessage)
+            showContentError(error)
         }
     }
 
     private fun refresh() {
         if (!storage.hasStorageAccess()) {
-            status.setText(storageAccessMessage())
-            choose.setText(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-                R.string.grant_access else R.string.grant_legacy_access)
             play.isEnabled = false
             return
         }
-        choose.setText(R.string.choose_content)
         try {
             val path = storage.localFilesystemPath()
-            if (path == null) {
-                status.setText(R.string.content_instructions)
-                play.isEnabled = false
-            } else {
-                status.text = getString(R.string.content_ready_path, path)
-                play.isEnabled = true
-            }
+            play.isEnabled = path != null
         } catch (error: Exception) {
-            status.text = getString(R.string.content_error, error.localizedMessage)
             play.isEnabled = false
         }
     }
@@ -337,7 +327,7 @@ class ContentActivity : Activity() {
             }
             startGame()
         } catch (error: Exception) {
-            status.text = getString(R.string.content_error, error.localizedMessage)
+            showContentError(error)
         }
     }
 
@@ -382,8 +372,16 @@ class ContentActivity : Activity() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             })
         } catch (error: Exception) {
-            status.text = getString(R.string.content_error, error.localizedMessage)
+            showContentError(error)
         }
+    }
+
+    private fun showContentError(error: Exception) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.choose_content)
+            .setMessage(getString(R.string.content_error, error.localizedMessage))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun storageAccessMessage(): Int =
