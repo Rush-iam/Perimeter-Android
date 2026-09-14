@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Perimeter</string>
     <string name="content_instructions">Choose the game folder containing Perimeter.ini.</string>
-    <string name="build_note">Build %1$s-%2$s</string>
+    <string name="build_note">Build %1$s (Perimeter %2$s)</string>
     <string name="choose_content">Choose game folder</string>
     <string name="play">Play</string>
     <string name="launch_arguments">Launch options</string>
@@ -20,6 +20,7 @@
     <string name="open_app_settings">Open app settings</string>
     <string name="grant_legacy_storage_access">Storage permission is required to read and write the game files. If permission was denied permanently, enable Storage in the app settings.</string>
     <string name="dxvk2_vulkan_unsupported_title">DXVK 2 requires Vulkan 1.3</string>
-    <string name="dxvk2_vulkan_unsupported_message">This device does not support Vulkan 1.3, so the DXVK 2 renderer cannot start. Install a DXVK 1 build (or switch to the slow/legacy Sokol GLES3 renderer).</string>
+    <string name="dxvk2_vulkan_unsupported_message">This device does not support Vulkan 1.3, so the DXVK 2 renderer cannot start. Select DXVK 1 or switch to the legacy Sokol GLES3 renderer.</string>
+    <string name="use_dxvk1_renderer">Use DXVK 1</string>
     <string name="use_sokol_renderer">Switch to Sokol GLES3</string>
 </resources>

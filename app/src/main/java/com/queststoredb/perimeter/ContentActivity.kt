@@ -59,6 +59,7 @@ class ContentActivity : Activity() {
             setTextColor(Color.GRAY)
         }
         layout.addView(buildNote)
+        GameLaunchOptions(this).ensureRendererSelected()
         refreshBuildNote()
         setContentView(ScrollView(this).apply { addView(layout) })
         refresh()
@@ -127,12 +128,16 @@ class ContentActivity : Activity() {
     }
 
     private fun refreshBuildNote() {
-        buildNote.text = getString(R.string.build_note, BuildConfig.VERSION_NAME, BuildConfig.FLAVOR) +
-            if (GameLaunchOptions(this).renderer() == "sokol") {
-                "\nwarning: legacy Sokol GLES3 renderer is selected, it is recommended to switch to DXVK"
-            } else {
-                ""
-            }
+        val options = GameLaunchOptions(this)
+        val renderer = when {
+            options.renderer() == "sokol" -> "Sokol"
+            options.dxvkVersion() == "1" -> "DXVK 1"
+            options.dxvkVersion() == "2" -> "DXVK 2"
+            else -> "DXVK version not selected"
+        }
+        buildNote.text = getString(
+            R.string.build_note, BuildConfig.VERSION_NAME, BuildConfig.PERIMETER_VERSION
+        ) + "\nRenderer: $renderer"
     }
 
     private fun chooseOrGrantAccess() {
@@ -231,6 +236,7 @@ class ContentActivity : Activity() {
     private fun startGameIfReady() {
         try {
             storage.localFilesystemPath() ?: error(getString(storageAccessMessage()))
+            GameLaunchOptions(this).ensureRendererSelected()
             if (requiresVulkan13ForDxvk() && !hasVulkan13Support()) {
                 showDxvk2UnsupportedDialog()
                 return
@@ -242,23 +248,35 @@ class ContentActivity : Activity() {
     }
 
     private fun requiresVulkan13ForDxvk(): Boolean =
-        BuildConfig.DXVK_VERSION == "2" && GameLaunchOptions(this).renderer() == "d3d9"
+        GameLaunchOptions(this).let { options ->
+            options.dxvkVersion() == "2" && options.renderer() == "d3d9"
+        }
 
     private fun hasVulkan13Support(): Boolean = packageManager.hasSystemFeature(
         PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
         VULKAN_1_3_VERSION
     )
 
+    private fun hasVulkan11Support(): Boolean = packageManager.hasSystemFeature(
+        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
+        VULKAN_1_1_VERSION
+    )
+
     private fun showDxvk2UnsupportedDialog() {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.dxvk2_vulkan_unsupported_title)
             .setMessage(R.string.dxvk2_vulkan_unsupported_message)
-            .setPositiveButton(R.string.use_sokol_renderer) { _, _ ->
-                GameLaunchOptions(this).selectRenderer("sokol")
+        if (hasVulkan11Support()) {
+            dialog.setPositiveButton(R.string.use_dxvk1_renderer) { _, _ ->
+                GameLaunchOptions(this).selectDxvkVersion("1")
                 startGame()
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        }
+        dialog.setNeutralButton(R.string.use_sokol_renderer) { _, _ ->
+                GameLaunchOptions(this).selectRenderer("sokol")
+                startGame()
+        }
+        dialog.setNegativeButton(android.R.string.cancel, null).show()
     }
 
     private fun startGame() {
@@ -281,7 +299,8 @@ class ContentActivity : Activity() {
     private companion object {
         const val SELECT_CONTENT = 1
         const val REQUEST_STORAGE = 2
-        // VK_MAKE_API_VERSION(0, 1, 3, 0). PackageManager accepts Vulkan's encoded version.
+        // VK_MAKE_API_VERSION(0, 1, 1, 0) and VK_MAKE_API_VERSION(0, 1, 3, 0).
+        const val VULKAN_1_1_VERSION = 0x00401000
         const val VULKAN_1_3_VERSION = 0x00403000
     }
 }

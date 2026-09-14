@@ -2,6 +2,7 @@ package com.queststoredb.perimeter
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.os.PowerManager
 import android.text.InputType
@@ -27,6 +28,14 @@ internal class GameLaunchOptionsEditor(
         .associateBy { it.removePrefix("tmp_").substringBefore('=') }
     private val sustainedPerformanceSupported =
         activity.getSystemService(PowerManager::class.java)?.isSustainedPerformanceModeSupported == true
+    private val vulkan13Supported = activity.packageManager.hasSystemFeature(
+        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
+        VULKAN_1_3_VERSION
+    )
+    private val vulkan11Supported = activity.packageManager.hasSystemFeature(
+        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
+        VULKAN_1_1_VERSION
+    )
     private val readers = linkedMapOf<String, () -> String?>()
     private val resetters = mutableListOf<() -> Unit>()
 
@@ -134,6 +143,12 @@ internal class GameLaunchOptionsEditor(
             row.addView(label(spec.title, 16f).apply { setTypeface(typeface, Typeface.BOLD) })
             when (spec.kind) {
                 Kind.CHOICE -> {
+                    if (spec.key == GRAPH_KEY) {
+                        addRendererChoice(row, spec)
+                        if (spec.description.isNotEmpty()) row.addView(label(spec.description, 13f))
+                        parent.addView(View(activity).apply { setBackgroundColor(0x33888888) }, LinearLayout.LayoutParams(-1, dp(1)))
+                        return
+                    }
                     val choices = listOf((spec.defaultChoiceValue ?: "") to spec.defaultChoiceLabel) + spec.choices
                     val selector = Spinner(activity).apply {
                         adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_item, choices.map { it.second }).apply {
@@ -172,6 +187,70 @@ internal class GameLaunchOptionsEditor(
         if (spec.description.isNotEmpty()) row.addView(label(spec.description, 13f))
         parent.addView(View(activity).apply { setBackgroundColor(0x33888888) }, LinearLayout.LayoutParams(-1, dp(1)))
     }
+
+    private fun addRendererChoice(row: LinearLayout, spec: Option) {
+        val choices = rendererChoices()
+        val defaultIndex = when {
+            vulkan13Supported -> DXVK_2_INDEX
+            vulkan11Supported -> DXVK_1_INDEX
+            else -> SOKOL_INDEX
+        }
+        val savedGraph = saved[GRAPH_KEY]?.substringAfter('=') ?: DEFAULT_GRAPH
+        val savedVersion = saved[DXVK_VERSION_KEY]?.substringAfter('=')
+        val savedIndex = choices.indexOfFirst {
+            it.graph == savedGraph && it.dxvkVersion == savedVersion
+        }
+        val selectedIndex = savedIndex.takeIf { it >= 0 && choices[it].supported } ?: defaultIndex
+        val selector = Spinner(activity).apply {
+            adapter = object : ArrayAdapter<String>(
+                activity,
+                android.R.layout.simple_spinner_item,
+                choices.map { it.label }
+            ) {
+                init {
+                    setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                }
+
+                override fun isEnabled(position: Int): Boolean = choices[position].supported
+
+                override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
+                    styleUnsupported(super.getView(position, convertView, parent), choices[position].supported)
+
+                override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
+                    styleUnsupported(super.getDropDownView(position, convertView, parent), choices[position].supported)
+            }
+            contentDescription = spec.title
+            setSelection(selectedIndex)
+        }
+        row.addView(selector, fullWidth())
+        readers[GRAPH_KEY] = { choices[selector.selectedItemPosition].graph }
+        readers[DXVK_VERSION_KEY] = { choices[selector.selectedItemPosition].dxvkVersion }
+        resetters += { selector.setSelection(defaultIndex) }
+    }
+
+    private fun styleUnsupported(view: View, supported: Boolean): View {
+        view.alpha = if (supported) 1f else 0.5f
+        return view
+    }
+
+    private fun rendererChoices() = listOf(
+        RendererChoice(
+            DEFAULT_GRAPH,
+            "2",
+            dxvkLabel("DXVK 2.x / Vulkan 1.3", vulkan13Supported),
+            vulkan13Supported
+        ),
+        RendererChoice(
+            DEFAULT_GRAPH,
+            "1",
+            dxvkLabel("DXVK 1.x / Vulkan 1.1", vulkan11Supported),
+            vulkan11Supported
+        ),
+        RendererChoice(SOKOL_GRAPH, null, "Sokol / GLES3 legacy", true),
+    )
+
+    private fun dxvkLabel(label: String, supported: Boolean) =
+        if (supported) label else "(unsupported) $label"
 
     private fun showLastLog() {
         try {
@@ -212,6 +291,12 @@ internal class GameLaunchOptionsEditor(
     private fun fullWidth() = LinearLayout.LayoutParams(-1, -2)
 
     private enum class Kind { FLAG, TOGGLE, INVERTED_BOOLEAN, CHOICE, TEXT, PASSWORD, ACTION }
+    private data class RendererChoice(
+        val graph: String,
+        val dxvkVersion: String?,
+        val label: String,
+        val supported: Boolean
+    )
     private data class Option(val section: String, val key: String, val title: String, val kind: Kind,
                               val description: String = "", val choices: List<Pair<String, String>> = emptyList(),
                               val defaultChoiceLabel: String = "Game default", val valueHint: String? = "Game default",
@@ -227,10 +312,7 @@ internal class GameLaunchOptionsEditor(
             Option("Gameplay & startup", "pause", "Start paused", Kind.FLAG),
             Option("Gameplay & startup", "autoSwitchAI", "Autoswitch controls to AI when idle", Kind.FLAG,
                 "After 60 seconds without player input, the active human player becomes AI-controlled. Player input switches control back and resets the timer."),
-            Option("Display & performance", "graph", "Graphics backend", Kind.CHOICE, choices = listOf(
-                "sokol" to "Sokol / GLES3 legacy"),
-                defaultChoiceLabel = "DXVK ${BuildConfig.DXVK_VERSION}.x / Vulkan ${if (BuildConfig.DXVK_VERSION == "1") "1.1" else "1.3"}",
-                defaultChoiceValue = "d3d9"),
+            Option("Display & performance", GRAPH_KEY, "Graphics renderer", Kind.CHOICE),
             Option("Display & performance", "show_fps", "Show FPS counter", Kind.TOGGLE),
             Option("Display & performance", "HT", "Disable multithreading", Kind.INVERTED_BOOLEAN),
             Option("Display & performance", "sustained_performance", "Android Sustained Performance Mode", Kind.TOGGLE,
@@ -273,5 +355,15 @@ internal class GameLaunchOptionsEditor(
 
         const val MAX_LOG_CHARACTERS = 512 * 1024
         const val SUSTAINED_PERFORMANCE_KEY = "sustained_performance"
+        const val GRAPH_KEY = "graph"
+        const val DXVK_VERSION_KEY = "android_dxvk_version"
+        const val SOKOL_GRAPH = "sokol"
+        const val DEFAULT_GRAPH = "d3d9"
+        const val SOKOL_INDEX = 2
+        const val DXVK_1_INDEX = 1
+        const val DXVK_2_INDEX = 0
+        // VK_MAKE_API_VERSION(0, 1, 1, 0) and VK_MAKE_API_VERSION(0, 1, 3, 0).
+        const val VULKAN_1_1_VERSION = 0x00401000
+        const val VULKAN_1_3_VERSION = 0x00403000
     }
 }

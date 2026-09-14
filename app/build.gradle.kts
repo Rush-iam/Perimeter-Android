@@ -1,6 +1,12 @@
 plugins {
     alias(libs.plugins.android.application)
 }
+
+val perimeterVersion = Regex(
+    "(?im)^\\s*project\\s*\\(\\s*perimeter\\s+VERSION\\s+([^\\s)]+)\\s*\\)"
+).find(rootProject.file("Perimeter/CMakeLists.txt").readText())?.groupValues?.get(1)
+    ?: error("Could not determine the Perimeter engine version")
+
 android {
     namespace = "com.queststoredb.perimeter"
     compileSdk {
@@ -13,6 +19,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
+        buildConfigField("String", "PERIMETER_VERSION", "\"$perimeterVersion\"")
         ndk {
             abiFilters.add("arm64-v8a")
         }

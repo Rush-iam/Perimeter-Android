@@ -2,7 +2,9 @@ package com.queststoredb.perimeter
 
 import android.content.Context
 
-class GameLaunchOptions(context: Context) {
+internal data class RendererSelection(val graph: String, val dxvkVersion: String?)
+
+class GameLaunchOptions(private val context: Context) {
     private val preferences = context.getSharedPreferences("game_launch", Context.MODE_PRIVATE)
     fun load(): String = preferences.getString("arguments", "") ?: ""
 
@@ -17,6 +19,44 @@ class GameLaunchOptions(context: Context) {
         ?.substringAfter('=')
         ?: "d3d9"
 
+    /** DXVK generation loaded by the next Android game process. */
+    fun dxvkVersion(): String? = parse(load())
+        .lastOrNull { it.removePrefix("tmp_").substringBefore('=') == "android_dxvk_version" }
+        ?.substringAfter('=')
+        ?.takeIf { it == "1" || it == "2" }
+
+    /** Selects and persists the best renderer when no complete renderer choice exists. */
+    internal fun ensureRendererSelected() {
+        val arguments = parse(load())
+        val graph = arguments.lastOrNull { keyOf(it) == GRAPH_KEY }?.substringAfter('=')
+        val version = arguments.lastOrNull { keyOf(it) == DXVK_VERSION_KEY }?.substringAfter('=')
+        val hasCompleteChoice = when {
+            graph == SOKOL_GRAPH -> true
+            (graph == null || graph == DEFAULT_GRAPH) && version != null && version in DXVK_VERSIONS -> true
+            else -> false
+        }
+        if (hasCompleteChoice) return
+
+        val preserved = arguments.filterNot { keyOf(it) == GRAPH_KEY || keyOf(it) == DXVK_VERSION_KEY }
+        val best = bestSupportedRenderer()
+        save((preserved + listOfNotNull(
+            "$GRAPH_KEY=${best.graph}",
+            best.dxvkVersion?.let { "$DXVK_VERSION_KEY=$it" }
+        )).joinToString("\n"))
+    }
+
+    internal fun bestSupportedRenderer(): RendererSelection = when {
+        context.packageManager.hasSystemFeature(
+            android.content.pm.PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
+            VULKAN_1_3_VERSION
+        ) -> RendererSelection(DEFAULT_GRAPH, "2")
+        context.packageManager.hasSystemFeature(
+            android.content.pm.PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
+            VULKAN_1_1_VERSION
+        ) -> RendererSelection(DEFAULT_GRAPH, "1")
+        else -> RendererSelection(SOKOL_GRAPH, null)
+    }
+
     /** Requests Android Sustained Performance Mode to disable boost clocks. */
     fun sustainedPerformance(): Boolean = parse(load())
         .lastOrNull { it.removePrefix("tmp_").substringBefore('=') == "sustained_performance" }
@@ -25,13 +65,24 @@ class GameLaunchOptions(context: Context) {
     /** Replaces the renderer argument without discarding unrelated launch options. */
     fun selectRenderer(renderer: String) {
         val arguments = parse(load())
-            .filterNot { it.removePrefix("tmp_").substringBefore('=') == "graph" }
+            .filterNot {
+                val key = it.removePrefix("tmp_").substringBefore('=')
+                key == GRAPH_KEY || renderer == SOKOL_GRAPH && key == DXVK_VERSION_KEY
+            }
         save((arguments + "graph=$renderer").joinToString("\n"))
+    }
+
+    /** Replaces the Android DXVK generation without discarding other options. */
+    fun selectDxvkVersion(version: String) {
+        require(version == "1" || version == "2") { "DXVK version must be 1 or 2." }
+        val arguments = parse(load())
+            .filterNot { it.removePrefix("tmp_").substringBefore('=') == "android_dxvk_version" }
+        save((arguments + "android_dxvk_version=$version").joinToString("\n"))
     }
 
     fun arguments(contentPath: String): Array<String> {
         val custom = parse(load())
-        val keys = custom.map { it.removePrefix("tmp_").substringBefore('=') }.toSet()
+        val keys = custom.map(::keyOf).toSet()
         // SDL passes each array entry as one argument, so spaces need no shell quoting
         // RunBackground is an engine focus policy: with 0, a focus-loss event
         // stops engine update/render quantization and pauses the network client.
@@ -51,6 +102,18 @@ class GameLaunchOptions(context: Context) {
     }
 
     companion object {
+        private const val GRAPH_KEY = "graph"
+        private const val DXVK_VERSION_KEY = "android_dxvk_version"
+        private const val SOKOL_GRAPH = "sokol"
+        private const val DEFAULT_GRAPH = "d3d9"
+        private val DXVK_VERSIONS = setOf("1", "2")
+        // VK_MAKE_API_VERSION(0, 1, 1, 0) and VK_MAKE_API_VERSION(0, 1, 3, 0).
+        private const val VULKAN_1_1_VERSION = 0x00401000
+        private const val VULKAN_1_3_VERSION = 0x00403000
+
+        private fun keyOf(argument: String): String =
+            argument.removePrefix("tmp_").substringBefore('=')
+
         internal fun parse(text: String): List<String> {
             val entries = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
             val keys = mutableSetOf<String>()
