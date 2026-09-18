@@ -210,10 +210,6 @@ target_include_directories(UserInterface PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 # Link the core engine library and dependencies
 target_link_libraries(
         perimeter PRIVATE
-        SDL2::SDL2
-        SDL2_net::SDL2_net
-        SDL2_mixer::SDL2_mixer
-        SDL2_image::SDL2_image
         ffmpeg
         games-frame-pacing::swappy_static
         android
