@@ -140,6 +140,7 @@ set_target_properties(ffmpeg PROPERTIES
 # Include the core project
 # We use EXCLUDE_FROM_ALL to prevent building desktop targets not needed for Android
 add_subdirectory(${PERIMETER_ROOT} perimeter_engine EXCLUDE_FROM_ALL)
+target_sources(Sound PRIVATE AndroidSoundLoader.cpp)
 
 if(PERIMETER_ANDROID_DXVK)
     add_dependencies(perimeter ${ANDROID_DXVK_RUNTIME_TARGET})
