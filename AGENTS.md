@@ -51,6 +51,7 @@
 ### Frame-Pacing Benchmark Workflow
 - Use the Android Studio-installed `debug` build and the established scripts under `scripts/frame-pacing/`.
 - After restarting `ContentActivity`, wait **2 seconds** for the launcher, tap **Play**, then wait **16 seconds after that tap** for the game main menu. Do not run `Start-TutorialBenchmark.ps1` while the launcher is still visible.
+- Obtain the current **Play** button bounds from `adb shell uiautomator dump /data/local/tmp/perimeter-ui.xml` before an automated tap, and tap their center. The launcher can appear in portrait or landscape, so fixed screen coordinates are unreliable.
 - Start `Start-TutorialBenchmark.ps1` from the game's top menu with `-InitialMenuSeconds 0 -TransitionSeconds 2`; use the established mission-load wait and verify the gameplay HUD before capture. The script's menu navigation must not begin from the launcher or a submenu.
 - `Capture-FramePacingRun.ps1` defaults to a **10-second warm-up**. The controlled zoom case is 1.5 seconds out, 1.5 seconds in, repeated seven times; capture it from a fresh Tutorial mission.
 - Record native DXVK timing and, when analyzing presentation, run the passive SurfaceFlinger sampler concurrently.
