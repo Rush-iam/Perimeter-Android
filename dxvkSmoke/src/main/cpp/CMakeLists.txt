@@ -13,7 +13,7 @@ FetchContent_Declare(SDL2
     GIT_TAG release-2.30.7)
 FetchContent_MakeAvailable(SDL2)
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../../../app/src/main/cpp/cmake/AndroidDependencySources.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../app/src/main/cpp/cmake/AndroidDependencyChecks.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../app/src/main/cpp/cmake/AndroidDxvk.cmake")
 android_add_dxvk("${sdl2_SOURCE_DIR}/include" games-frame-pacing::swappy_static)
 add_library(dxvk_smoke SHARED DxvkSmoke.cpp

@@ -16,12 +16,6 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
-                val sharedDependencySourceDir =
-                    providers.gradleProperty("androidDependencySourceDir").orNull
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let(rootProject::file)
-                        ?: gradle.gradleUserHomeDir.resolve("caches/perimeter-android/sources")
-                arguments += "-DPERIMETER_ANDROID_DEPENDENCY_SOURCE_DIR=${sharedDependencySourceDir.invariantSeparatorsPath}"
                 providers.gradleProperty("dxvkPython").orNull?.takeIf { it.isNotBlank() }?.let {
                     arguments += "-DANDROID_DXVK_PYTHON=${rootProject.file(it).invariantSeparatorsPath}"
                 }

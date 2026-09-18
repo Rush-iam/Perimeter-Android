@@ -30,19 +30,9 @@ android {
                 val androidDxvk = providers.gradleProperty("androidDxvk").orNull
                     ?.takeIf { it.isNotBlank() } ?: "ON"
                 arguments += "-DPERIMETER_ANDROID_DXVK=$androidDxvk"
-                val sharedDependencySourcesEnabled =
-                    !providers.gradleProperty("androidSharedDependencySources").orNull
-                        .equals("false", ignoreCase = true)
-                if (sharedDependencySourcesEnabled) {
-                    val sharedDependencySourceDir =
-                        providers.gradleProperty("androidDependencySourceDir").orNull
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let(rootProject::file)
-                            ?: gradle.gradleUserHomeDir.resolve("caches/perimeter-android/sources")
-                    arguments += "-DPERIMETER_ANDROID_DEPENDENCY_SOURCE_DIR=${sharedDependencySourceDir.invariantSeparatorsPath}"
-                } else {
-                    arguments += "-DPERIMETER_ANDROID_DEPENDENCY_SOURCE_DIR="
-                }
+                val androidStacktrace = providers.gradleProperty("androidStacktrace").orNull
+                    ?.takeIf { it.isNotBlank() } ?: "ON"
+                arguments += "-DPERIMETER_ANDROID_STACKTRACE=$androidStacktrace"
                 val compilerCacheMode = providers.gradleProperty("androidCompilerCache")
                     .orNull?.takeIf { it.isNotBlank() } ?: "AUTO"
                 arguments += "-DANDROID_COMPILER_CACHE=$compilerCacheMode"

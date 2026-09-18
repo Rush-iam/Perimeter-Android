@@ -8,19 +8,25 @@ find_package(games-frame-pacing REQUIRED CONFIG)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FetchContent)
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDependencySources.cmake")
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL
+    "Disable FetchContent updates after the initial population")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDependencyChecks.cmake")
 
 set(PERIMETER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../Perimeter")
-set(PERIMETER_SOURCE_DIR "${PERIMETER_ROOT}/Source")
 
 # Configure core project options for Android. DXVK is the preferred default
 # for hardware with Vulkan support; Sokol remains available as a fallback.
 option(PERIMETER_ANDROID_DXVK "Build the Android DXVK D3D9 renderer" ON)
-set(OPTION_FFMPEG_MOVIES ON CACHE BOOL "" FORCE)
-set(OPTION_DISABLE_STACKTRACE OFF CACHE BOOL "" FORCE)
+set(OPTION_FFMPEG_MOVIES ON CACHE BOOL "")
 set(OPTION_SOKOL ON CACHE BOOL "" FORCE)
 set(OPTION_SOKOL_API "GLES3" CACHE STRING "" FORCE)
+option(PERIMETER_ANDROID_STACKTRACE
+    "Build Android stacktrace support and fetch Boost headers" ON)
+if(PERIMETER_ANDROID_STACKTRACE)
+    set(OPTION_DISABLE_STACKTRACE OFF CACHE BOOL "" FORCE)
+else()
+    set(OPTION_DISABLE_STACKTRACE ON CACHE BOOL "" FORCE)
+endif()
 # Android never ships the desktop script compiler or its host-only script
 # processing targets.  Keep this Android-only switch explicit so upstream
 # desktop configurations retain their existing defaults.
@@ -32,54 +38,47 @@ set(PERIMETER_ANDROID_SKIP_DEVELOPMENT_TARGETS ON CACHE BOOL
 add_library(GL INTERFACE)
 target_link_libraries(GL INTERFACE GLESv3)
 
-# XTool uses Boost.Stacktrace header-only; compile it with the Android toolchain
-# rather than depending on ABI-specific Boost binaries. Keep the complete header
-# tree for its transitive dependencies, without configuring Boost's libraries.
-perimeter_android_dependency_source_args(_boost_headers_source boost_headers boost_headers)
-FetchContent_Declare(
-        boost_headers
-        URL https://archives.boost.io/release/1.85.0/source/boost_1_85_0.tar.bz2
-        URL_HASH SHA256=7009fe1faa1697476bdc7027703a2badb84e849b7b0baad5086b087b971f8617
-        SOURCE_SUBDIR perimeter_headers_only
-        ${_boost_headers_source}
-)
-FetchContent_MakeAvailable(boost_headers)
-# Supply the core project's find_package(Boost) with the fetched headers.
-set(Boost_NO_BOOST_CMAKE ON)
-set(Boost_NO_SYSTEM_PATHS ON)
-set(Boost_INCLUDE_DIR "${boost_headers_SOURCE_DIR}" CACHE PATH "Boost headers" FORCE)
+if(PERIMETER_ANDROID_STACKTRACE)
+    # XTool uses Boost.Stacktrace header-only; compile it with the Android
+    # toolchain rather than depending on ABI-specific Boost binaries. Keep the
+    # complete header tree for its transitive dependencies, without configuring
+    # Boost's libraries.
+    FetchContent_Declare(
+            boost_headers
+            URL https://archives.boost.io/release/1.85.0/source/boost_1_85_0.tar.bz2
+            URL_HASH SHA256=7009fe1faa1697476bdc7027703a2badb84e849b7b0baad5086b087b971f8617
+            SOURCE_SUBDIR perimeter_headers_only
+    )
+    FetchContent_MakeAvailable(boost_headers)
+    # Supply the core project's find_package(Boost) with the fetched headers.
+    set(Boost_NO_BOOST_CMAKE ON)
+    set(Boost_NO_SYSTEM_PATHS ON)
+    set(Boost_INCLUDE_DIR "${boost_headers_SOURCE_DIR}" CACHE PATH "Boost headers" FORCE)
+endif()
 
-perimeter_android_dependency_source_args(_sdl2_source SDL2 sdl2)
 FetchContent_Declare(
         SDL2
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG release-2.30.7
         GIT_SHALLOW TRUE
-        ${_sdl2_source}
 )
-perimeter_android_dependency_source_args(_sdl2_net_source SDL2_net sdl2_net)
 FetchContent_Declare(
         SDL2_net
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_net.git
         GIT_TAG release-2.2.0
         GIT_SHALLOW TRUE
-        ${_sdl2_net_source}
 )
-perimeter_android_dependency_source_args(_sdl2_mixer_source SDL2_mixer sdl2_mixer)
 FetchContent_Declare(
         SDL2_mixer
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
         GIT_TAG release-2.8.0
         GIT_SHALLOW TRUE
-        ${_sdl2_mixer_source}
 )
-perimeter_android_dependency_source_args(_sdl2_image_source SDL2_image sdl2_image)
 FetchContent_Declare(
         SDL2_image
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
         GIT_TAG release-2.8.2
         GIT_SHALLOW TRUE
-        ${_sdl2_image_source}
 )
 
 # Disable SDL2 features not needed for engine logic during initial build
@@ -88,11 +87,11 @@ set(SDL_STATIC OFF CACHE BOOL "" FORCE)
 set(SDL_TEST OFF CACHE BOOL "" FORCE)
 
 # SDL2_mixer options
-set(SDL2_MIXER_SAMPLES OFF CACHE BOOL "" FORCE)
-set(SDL2_MIXER_MOD OFF CACHE BOOL "" FORCE)
-set(SDL2_MIXER_MIDI OFF CACHE BOOL "" FORCE)
-set(SDL2_MIXER_OPUS OFF CACHE BOOL "" FORCE)
-set(SDL2_MIXER_FLAC OFF CACHE BOOL "" FORCE)
+set(SDL2_MIXER_SAMPLES OFF CACHE BOOL "")
+set(SDL2_MIXER_MOD OFF CACHE BOOL "")
+set(SDL2_MIXER_MIDI OFF CACHE BOOL "")
+set(SDL2_MIXER_OPUS OFF CACHE BOOL "")
+set(SDL2_MIXER_FLAC OFF CACHE BOOL "")
 
 FetchContent_MakeAvailable(SDL2 SDL2_net SDL2_mixer SDL2_image)
 perimeter_android_verify_git_revision(SDL2 "${sdl2_SOURCE_DIR}"
@@ -117,15 +116,15 @@ else()
 endif()
 
 # FFmpeg Prebuilts for Android
-perimeter_android_dependency_source_args(_ffmpeg_prebuilt_source
-    ffmpeg_prebuilt ffmpeg_prebuilt)
 FetchContent_Declare(
         ffmpeg_prebuilt
         GIT_REPOSITORY https://github.com/hzw1199/Android-FFmpeg-Prebuilt.git
         GIT_TAG 90231cc0105aef4f76926b911535f5eb73511b86
-        ${_ffmpeg_prebuilt_source}
 )
-FetchContent_MakeAvailable(ffmpeg_prebuilt)
+FetchContent_GetProperties(ffmpeg_prebuilt)
+if(NOT ffmpeg_prebuilt_POPULATED)
+    FetchContent_Populate(ffmpeg_prebuilt)
+endif()
 
 # The repo has versioned folders
 set(FFMPEG_ROOT ${ffmpeg_prebuilt_SOURCE_DIR}/ffmpeg-9.0)
