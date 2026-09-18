@@ -15,10 +15,11 @@ if(NOT _android_compiler_cache_mode IN_LIST _android_compiler_cache_modes)
         "ANDROID_COMPILER_CACHE must be AUTO, CCACHE, SCCACHE, or OFF; got '${ANDROID_COMPILER_CACHE}'.")
 endif()
 
-set(_android_compiler_cache_executable "${ANDROID_COMPILER_CACHE_EXECUTABLE}")
+set(_android_compiler_cache_executable "_android_compiler_cache_executable-NOTFOUND")
 set(_android_compiler_cache_kind "")
 if(NOT _android_compiler_cache_mode STREQUAL "OFF")
-    if(_android_compiler_cache_executable)
+    if(ANDROID_COMPILER_CACHE_EXECUTABLE)
+        set(_android_compiler_cache_executable "${ANDROID_COMPILER_CACHE_EXECUTABLE}")
         if(NOT EXISTS "${_android_compiler_cache_executable}")
             message(FATAL_ERROR
                 "ANDROID_COMPILER_CACHE_EXECUTABLE does not exist: ${_android_compiler_cache_executable}")
