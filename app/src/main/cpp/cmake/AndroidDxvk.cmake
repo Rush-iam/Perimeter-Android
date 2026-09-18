@@ -77,12 +77,10 @@ macro(_dxvk_ensure_host_tools)
             set(ANDROID_DXVK_MESON "${_HOST_MESON}")
         else()
             message(STATUS "Meson not found on host, fetching 1.7.0 source via Git...")
-            perimeter_android_dependency_source_args(_meson_source meson_src meson_src)
             FetchContent_Declare(meson_src
                 GIT_REPOSITORY https://github.com/mesonbuild/meson.git
                 GIT_TAG 1.7.0
                 GIT_SHALLOW TRUE
-                ${_meson_source}
             )
             FetchContent_GetProperties(meson_src)
             if(NOT meson_src_POPULATED)
@@ -125,12 +123,9 @@ macro(_dxvk_ensure_host_tools)
                 set(_glslang_url "https://github.com/KhronosGroup/glslang/releases/download/16.5.0/glslang-16.5.0-linux-x86_64-release.zip")
                 set(_glslang_hash "SHA256=dfc3fb889eeb9344dce58606a0b37bde89f1eec6140f4e9b4b3d9305f46f64f4")
             endif()
-            perimeter_android_dependency_source_args(_glslang_source
-                glslang_bin glslang_bin)
             FetchContent_Declare(glslang_bin
                 URL "${_glslang_url}"
                 URL_HASH "${_glslang_hash}"
-                ${_glslang_source}
             )
             FetchContent_GetProperties(glslang_bin)
             if(NOT glslang_bin_POPULATED)
@@ -157,9 +152,9 @@ macro(_dxvk_ensure_host_tools)
 endmacro()
 
 # This target is deliberately independent of Perimeter's desktop DXVK builder.
-function(_android_add_dxvk_generation generation sdl_include_dir swappy_target)
+function(_android_add_dxvk_generation
+        generation sdl_include_dir swappy_target sdl_patch_stamp sdl_patch_target)
     set(android_dxvk_name "android_dxvk_source_v${generation}")
-    set(android_dxvk_source_key "${android_dxvk_name}")
 
     if(generation STREQUAL "1")
         set(android_dxvk_git_repository https://github.com/IonAgorria/dxvk-native)
@@ -173,13 +168,10 @@ function(_android_add_dxvk_generation generation sdl_include_dir swappy_target)
         message(FATAL_ERROR "Unsupported Android DXVK generation: ${generation}")
     endif()
 
-    perimeter_android_dependency_source_args(_android_dxvk_source
-        ${android_dxvk_source_key} ${android_dxvk_source_key})
     FetchContent_Declare(${android_dxvk_name}
         GIT_REPOSITORY ${android_dxvk_git_repository}
         GIT_TAG ${android_dxvk_git_tag}
         GIT_SUBMODULES_RECURSE TRUE
-        ${_android_dxvk_source}
         SOURCE_SUBDIR android_no_cmake)
     FetchContent_MakeAvailable(${android_dxvk_name})
 
@@ -228,13 +220,24 @@ function(_android_add_dxvk_generation generation sdl_include_dir swappy_target)
         ${android_dxvk_swappy_args}
         ${android_dxvk_is_native_args})
 
-    execute_process(COMMAND "${ANDROID_DXVK_PYTHON}"
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py"
-        "${android_dxvk_source_dir}" "${android_dxvk_variant}"
-        COMMAND_ERROR_IS_FATAL ANY)
-
     set(dxvk_build "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk-v${generation}")
     file(MAKE_DIRECTORY "${dxvk_build}")
+    set(android_dxvk_patch_script
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py")
+    set(android_dxvk_patch_stamp
+        "${dxvk_build}/source-patched.stamp")
+    set(android_dxvk_patch_target "android_dxvk_patch_v${generation}")
+    add_custom_command(OUTPUT "${android_dxvk_patch_stamp}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${dxvk_build}"
+        COMMAND "${ANDROID_DXVK_PYTHON}" "${android_dxvk_patch_script}"
+            "${android_dxvk_source_dir}" "${android_dxvk_variant}"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${android_dxvk_patch_stamp}"
+        DEPENDS "${android_dxvk_patch_script}"
+        COMMENT "Patching Android DXVK v${generation} sources"
+        VERBATIM)
+    add_custom_target(${android_dxvk_patch_target}
+        DEPENDS "${android_dxvk_patch_stamp}")
+
     configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/android-dxvk.cross.in"
         "${dxvk_build}/android.cross" @ONLY)
     configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/android-dxvk.native.in"
@@ -285,6 +288,7 @@ function(_android_add_dxvk_generation generation sdl_include_dir swappy_target)
     ExternalProject_Add(${android_dxvk_build_target}
         SOURCE_DIR "${android_dxvk_source_dir}"
         BINARY_DIR "${dxvk_build}/build"
+        DEPENDS ${sdl_patch_target} ${android_dxvk_patch_target}
         DOWNLOAD_COMMAND ""
         UPDATE_COMMAND ""
         CONFIGURE_COMMAND "${CMAKE_COMMAND}" -P "${android_dxvk_setup_script}"
@@ -301,7 +305,9 @@ function(_android_add_dxvk_generation generation sdl_include_dir swappy_target)
             "${dxvk_build}/android.cross"
             "${dxvk_build}/host.native"
             "${android_dxvk_setup_script}"
-            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py"
+            "${android_dxvk_patch_script}"
+            "${android_dxvk_patch_stamp}"
+            "${sdl_patch_stamp}"
         COMMENT "Checking Android DXVK v${generation} configuration inputs")
 
     add_library(AndroidDxvk::D3D9_v${generation} SHARED IMPORTED GLOBAL)
@@ -342,20 +348,33 @@ function(android_add_dxvk sdl_include_dir swappy_target)
     endif()
 
     _dxvk_ensure_host_tools()
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py")
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    set(android_dxvk_sdl_patch_script
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_sdl.py")
-    execute_process(COMMAND "${ANDROID_DXVK_PYTHON}"
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_sdl.py"
-        "${sdl2_SOURCE_DIR}"
-        COMMAND_ERROR_IS_FATAL ANY)
+    set(android_dxvk_sdl_patch_stamp
+        "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk/sdl-source-patched.stamp")
+    add_custom_command(OUTPUT "${android_dxvk_sdl_patch_stamp}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk"
+        COMMAND "${ANDROID_DXVK_PYTHON}" "${android_dxvk_sdl_patch_script}"
+            "${sdl2_SOURCE_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${android_dxvk_sdl_patch_stamp}"
+        DEPENDS "${android_dxvk_sdl_patch_script}"
+        COMMENT "Patching SDL for Android DXVK"
+        VERBATIM)
+    add_custom_target(android_dxvk_patch_sdl
+        DEPENDS "${android_dxvk_sdl_patch_stamp}")
+    if(NOT TARGET SDL2)
+        message(FATAL_ERROR "Android DXVK requires the SDL2 target before patching SDL")
+    endif()
+    add_dependencies(SDL2 android_dxvk_patch_sdl)
 
-    _android_add_dxvk_generation(1 "${sdl_include_dir}" "${swappy_target}")
+    _android_add_dxvk_generation(1 "${sdl_include_dir}" "${swappy_target}"
+        "${android_dxvk_sdl_patch_stamp}" android_dxvk_patch_sdl)
     set(android_dxvk_v1_headers "${android_dxvk_header_dirs}")
     set(android_dxvk_v1_package "${android_dxvk_package_targets}")
     set(android_dxvk_v1_build "${android_dxvk_build_targets}")
-    _android_add_dxvk_generation(2 "${sdl_include_dir}" "${swappy_target}")
+    _android_add_dxvk_generation(2 "${sdl_include_dir}" "${swappy_target}"
+        "${android_dxvk_sdl_patch_stamp}" android_dxvk_patch_sdl)
     set(android_dxvk_v2_headers "${android_dxvk_header_dirs}")
     set(android_dxvk_v2_package "${android_dxvk_package_targets}")
     set(android_dxvk_v2_build "${android_dxvk_build_targets}")
