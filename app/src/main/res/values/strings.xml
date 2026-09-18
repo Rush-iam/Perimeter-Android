@@ -5,7 +5,7 @@
     <string name="android_port_by">Android port by Rush_iam</string>
     <string name="choose_content">Choose game folder</string>
     <string name="play">Play</string>
-    <string name="launch_arguments">Launch options</string>
+    <string name="launch_arguments">Options</string>
     <string name="render_resolution">Resolution</string>
     <string name="render_resolution_value">%1$d × %2$d</string>
     <string name="limit_frame_rate_to">Limit FPS to %1$d</string>
