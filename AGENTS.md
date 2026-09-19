@@ -13,11 +13,10 @@
 ## Build & Run
 - **Build System:** Gradle (for Android) + CMake (for Native Engine).
 - **Gradle Tasks:**
-  - `./gradlew :app:assembleDebug`: Build the debug APK.
-  - `./gradlew :app:assembleRelease`: Build the production Release APK.
   - `./gradlew :app:assembleReleaseBenchmark`: Build the release-optimized,
-    diagnostics-accessible benchmark APK.
-  - `./gradlew :app:installDebug`: Install the debug APK to a connected device.
+    diagnostics-accessible development APK.
+  - `./gradlew :app:assembleRelease`: Build the production Release APK.
+  - `./gradlew :app:installReleaseBenchmark`: Install the development APK to a connected device.
 - **ABI Filter:** Currently targeting `arm64-v8a`.
 - **Min SDK:** 29 (Android 10).
 - **Target SDK:** 37 (Android 15).
@@ -58,14 +57,14 @@
 - The sandbox PowerShell environment may expose Java's `user.home` as the filesystem root. Use the repository cache and quote the Java user-home argument so the Windows Gradle wrapper passes it through correctly:
   ```powershell
   $env:GRADLE_USER_HOME = Join-Path (Get-Location) '.gradle'
-  .\gradlew.bat "-Duser.home=$env:USERPROFILE" --no-daemon :app:assembleDebug --console=plain
+  .\gradlew.bat "-Duser.home=$env:USERPROFILE" --no-daemon :app:assembleReleaseBenchmark --console=plain
   ```
-- For a connected-device install, use the same environment and replace `:app:assembleDebug` with `:app:installDebug`. Set `$env:HOME = $env:USERPROFILE` before invoking `adb` if it reports `Cannot mkdir '\.android': Permission denied`.
+- For a connected-device install, use the same environment and replace `:app:assembleReleaseBenchmark` with `:app:installReleaseBenchmark`. Set `$env:HOME = $env:USERPROFILE` before invoking `adb` if it reports `Cannot mkdir '\.android': Permission denied`.
 - Leave `ANDROID_USER_HOME` and `ANDROID_SDK_HOME` unset. `-Duser.home=$env:USERPROFILE` keeps Android tooling and debug signing pointed at the normal `%USERPROFILE%\.android` location; do not redirect them to a repository or sandbox-local keystore.
 - If the sandbox denies access to `%USERPROFILE%\.android`, rerun the same Gradle command with elevated execution rather than redirecting Android's user directory or debug keystore.
 
 ### Signing and Device Installs
-- Use Android Studio's default debug keystore at `%USERPROFILE%\.android\debug.keystore` for debug APKs installed on the configured Android device.
+- Use Android Studio's default debug keystore at `%USERPROFILE%\.android\debug.keystore` for releaseBenchmark APKs installed on the configured Android device.
 - The debug key alias is `androiddebugkey`. Keep the keystore outside the repository; do not substitute a repository-local or sandbox-local debug keystore.
 - Do not set `ANDROID_USER_HOME` to a repository-local path when building or installing. The Android Gradle plugin derives the default debug keystore from that location, which would silently select `.android\debug.keystore` inside the repository and produce an APK that cannot update the Android Studio-signed install.
 - If an isolated Gradle cache is needed, set `GRADLE_USER_HOME` only; leave `ANDROID_USER_HOME` unset so signing resolves to `%USERPROFILE%\.android\debug.keystore`.
