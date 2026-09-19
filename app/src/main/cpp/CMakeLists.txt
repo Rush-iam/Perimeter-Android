@@ -169,12 +169,39 @@ target_link_libraries(perimeter_android_sdl INTERFACE
         SDL2_net::SDL2_net
         SDL2_mixer::SDL2_mixer
         SDL2_image::SDL2_image)
-# Keep the generated-header ordering edge in this directory. CMake's Ninja
-# generator otherwise weakens a cross-directory dependency on SDL's utility
-# target to a directory-level order-only edge for static-library objects.
-add_custom_target(perimeter_android_sdl_headers
-        DEPENDS sdl_headers_copy)
-foreach(_perimeter_android_sdl_consumer
+
+# Keep the release optimization experiment Android-owned. The upstream engine
+# supplies the O2 baseline through the Android toolchain and its own release
+# settings; O3 is appended only when explicitly selected so it overrides that
+# baseline without changing the upstream project.
+set(PERIMETER_ANDROID_OPTIMIZATION "O2" CACHE STRING
+        "Android native optimization level (O2 or O3)")
+set_property(CACHE PERIMETER_ANDROID_OPTIMIZATION PROPERTY STRINGS O2 O3)
+if(NOT PERIMETER_ANDROID_OPTIMIZATION STREQUAL "O2" AND
+   NOT PERIMETER_ANDROID_OPTIMIZATION STREQUAL "O3")
+    message(FATAL_ERROR
+            "PERIMETER_ANDROID_OPTIMIZATION must be O2 or O3, got '${PERIMETER_ANDROID_OPTIMIZATION}'")
+endif()
+add_library(perimeter_android_optimization INTERFACE)
+if(PERIMETER_ANDROID_OPTIMIZATION STREQUAL "O3")
+    target_compile_options(perimeter_android_optimization INTERFACE
+            "$<$<COMPILE_LANGUAGE:C,CXX>:-O3>")
+endif()
+
+# Keep ThinLTO optional and Android-owned. Only the engine targets below are
+# included; third-party and prebuilt dependencies remain ordinary native
+# libraries and are not rebuilt with LTO.
+option(PERIMETER_ANDROID_THIN_LTO
+        "Enable ThinLTO for Android-owned engine targets" OFF)
+add_library(perimeter_android_thin_lto INTERFACE)
+if(PERIMETER_ANDROID_THIN_LTO)
+    target_compile_options(perimeter_android_thin_lto INTERFACE
+            "$<$<COMPILE_LANGUAGE:C,CXX>:-flto=thin>")
+    target_link_options(perimeter_android_thin_lto INTERFACE
+            "-flto=thin")
+endif()
+
+set(_perimeter_android_native_targets
         perimeter
         XTool
         XPrmLib
@@ -182,6 +209,7 @@ foreach(_perimeter_android_sdl_consumer
         Terra
         tx3d
         Render
+        RenderSokol
         Sound
         Network
         Util
@@ -193,12 +221,24 @@ foreach(_perimeter_android_sdl_consumer
         HT
         Integrations
         Exodus)
+
+# Keep the generated-header ordering edge in this directory. CMake's Ninja
+# generator otherwise weakens a cross-directory dependency on SDL's utility
+# target to a directory-level order-only edge for static-library objects.
+add_custom_target(perimeter_android_sdl_headers
+        DEPENDS sdl_headers_copy)
+foreach(_perimeter_android_sdl_consumer IN LISTS _perimeter_android_native_targets)
     target_link_libraries(${_perimeter_android_sdl_consumer} PRIVATE
             perimeter_android_sdl)
+    target_link_libraries(${_perimeter_android_sdl_consumer} PRIVATE
+            perimeter_android_optimization)
+    target_link_libraries(${_perimeter_android_sdl_consumer} PRIVATE
+            perimeter_android_thin_lto)
     add_dependencies(${_perimeter_android_sdl_consumer}
             perimeter_android_sdl_headers)
 endforeach()
 unset(_perimeter_android_sdl_consumer)
+unset(_perimeter_android_native_targets)
 
 # Add Android-specific logging redirector to the engine target
 target_sources(perimeter PRIVATE

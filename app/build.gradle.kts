@@ -33,6 +33,12 @@ android {
                 val androidStacktrace = providers.gradleProperty("androidStacktrace").orNull
                     ?.takeIf { it.isNotBlank() } ?: "ON"
                 arguments += "-DPERIMETER_ANDROID_STACKTRACE=$androidStacktrace"
+                val androidOptimization = providers.gradleProperty("androidOptimization").orNull
+                    ?.takeIf { it.isNotBlank() } ?: "O2"
+                arguments += "-DPERIMETER_ANDROID_OPTIMIZATION=$androidOptimization"
+                val androidThinLto = providers.gradleProperty("androidThinLto").orNull
+                    ?.takeIf { it.isNotBlank() } ?: "OFF"
+                arguments += "-DPERIMETER_ANDROID_THIN_LTO=$androidThinLto"
                 val compilerCacheMode = providers.gradleProperty("androidCompilerCache")
                     .orNull?.takeIf { it.isNotBlank() } ?: "AUTO"
                 arguments += "-DANDROID_COMPILER_CACHE=$compilerCacheMode"
