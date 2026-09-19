@@ -14,10 +14,45 @@
 - **Build System:** Gradle (for Android) + CMake (for Native Engine).
 - **Gradle Tasks:**
   - `./gradlew :app:assembleDebug`: Build the debug APK.
+  - `./gradlew :app:assembleRelease`: Build the production Release APK.
+  - `./gradlew :app:assembleReleaseBenchmark`: Build the release-optimized,
+    diagnostics-accessible benchmark APK.
   - `./gradlew :app:installDebug`: Install the debug APK to a connected device.
 - **ABI Filter:** Currently targeting `arm64-v8a`.
 - **Min SDK:** 29 (Android 10).
 - **Target SDK:** 37 (Android 15).
+
+### Android Studio-compatible Gradle builds
+- To reuse Android Studio's Gradle and native CMake caches, set
+  `GRADLE_USER_HOME` to `%USERPROFILE%\.gradle`; do not use the repository's
+  `.gradle` directory for these builds.
+- Preserve the project compiler-cache setting from `gradle.properties`
+  (`androidCompilerCache=CCACHE`). Do not pass
+  `-PandroidCompilerCache=OFF`, change `androidCompilerCacheDir`, or otherwise
+  change the cache mode when matching Android Studio's native build.
+- Ensure the host-installed `ccache` executable is available on `PATH` before
+  building. The matching native configuration is keyed by the compiler-cache
+  mode and directory, so changing either can trigger a complete CMake/DXVK
+  rebuild even when Android Studio built the same variant recently.
+- Use the normal Android Studio-compatible Release command for the release
+  performance baseline:
+  ```powershell
+  $env:GRADLE_USER_HOME = Join-Path $env:USERPROFILE '.gradle'
+  .\gradlew.bat "-Duser.home=$env:USERPROFILE" --no-daemon :app:assembleRelease --console=plain
+  ```
+- Android native optimization defaults to `O2`. Build the Android-scoped O3
+  candidate explicitly with `-PandroidOptimization=O3`; do not change the
+  default when building the control. Pass `-Optimization O3` to
+  `Capture-FramePacingRun.ps1` so the candidate level is recorded in capture
+  metadata.
+- ThinLTO is disabled by default. Build the Android-scoped ThinLTO candidate
+  explicitly with `-PandroidThinLto=ON`; pass `-ThinLto ON` to
+  `Capture-FramePacingRun.ps1` so the candidate state is recorded in capture
+  metadata.
+- If the Codex sandbox cannot execute the installed NDK toolchain or access
+  `%USERPROFILE%\.gradle` / `%USERPROFILE%\.android`, rerun this same command
+  with elevated execution. Do not switch to a repository-local Gradle cache or
+  debug keystore merely to avoid the permission boundary.
 
 ### Gradle from the Codex Sandbox
 - The sandbox PowerShell environment may expose Java's `user.home` as the filesystem root. Use the repository cache and quote the Java user-home argument so the Windows Gradle wrapper passes it through correctly:
@@ -49,11 +84,18 @@
 - **Namespace:** `com.queststoredb.perimeter`.
 
 ### Frame-Pacing Benchmark Workflow
-- Use the Android Studio-installed `debug` build and the established scripts under `scripts/frame-pacing/`.
-- After restarting `ContentActivity`, wait **2 seconds** for the launcher, tap **Play**, then wait **16 seconds after that tap** for the game main menu. Do not run `Start-TutorialBenchmark.ps1` while the launcher is still visible.
+- Use the Android Studio-compatible `releaseBenchmark` build for release
+  performance captures and the established scripts under `scripts/frame-pacing/`.
+  `releaseBenchmark` is initialized from `Release` and is debuggable only so
+  `run-as` can retrieve native timing files; do not treat the ordinary
+  non-debuggable `Release` APK as capture-ready.
+- After restarting `ContentActivity` with the release/releaseBenchmark build, wait **2 seconds** for the launcher, tap **Play**, then wait **7 seconds after that tap** for the game main menu. Do not run `Start-TutorialBenchmark.ps1` while the launcher is still visible.
 - Obtain the current **Play** button bounds from `adb shell uiautomator dump /data/local/tmp/perimeter-ui.xml` before an automated tap, and tap their center. The launcher can appear in portrait or landscape, so fixed screen coordinates are unreliable.
 - Start `Start-TutorialBenchmark.ps1` from the game's top menu with `-InitialMenuSeconds 0 -TransitionSeconds 2`; use the established mission-load wait and verify the gameplay HUD before capture. The script's menu navigation must not begin from the launcher or a submenu.
-- `Capture-FramePacingRun.ps1` defaults to a **10-second warm-up**. The controlled zoom case is 1.5 seconds out, 1.5 seconds in, repeated seven times; capture it from a fresh Tutorial mission.
+- `Capture-FramePacingRun.ps1` defaults to a **10-second warm-up**. The canonical controlled zoom case is 1.5 seconds out, 1.5 seconds in, repeated 21 times for a 63-second window; capture it from a fresh Tutorial mission. The seven-cycle form remains a short diagnostic.
+- The standard warm-up then applies a 3-second all-core load pulse followed by
+  a **2-second post-load settling wait** before the camera measurement. Earlier
+  captures using the 250 ms gap remain valid historical results.
 - Record native DXVK timing and, when analyzing presentation, run the passive SurfaceFlinger sampler concurrently.
 
 ### Commit Plan Workflow
@@ -63,7 +105,7 @@
 - Write or update a plan document in the inspected repository, with proposed commits grouped and sorted by category. Use these category icons consistently: `🛠️` build, `🐛` bugfix, `🕹️` controls, `🎨` graphics, `📝` logging, `🚀` optimization, `♻️` refactoring, `🧹` cleanup, `📚` docs, `🧪` testing, `🧰` tooling, and `📊` benchmark.
 - Review every proposed commit for correctness, regressions, and bugs before presenting the plan. Inspect the complete diff assigned to each commit, including interactions across commit boundaries and nested repositories; record findings in the plan and revise the proposed boundaries or descriptions when needed.
 - Store commit-splitting plan documents in the main repository's `.tmp/` directory, including plans for nested repositories; they are working artifacts and must never be included in a proposed commit or committed to a repository.
-- Prefix each title with its category icon and category tag. Omit the redundant `[Android]` tag from commits confined to this Android repository. Android-only commits in a mixed-scope repository, including the core `/Perimeter` project, must include the designated `[Android]` tag so they are distinguished from upstream or cross-platform changes.
+- Prefix each title with its category icon and a lowercase category tag. The designated `[Android]` tag is the exception and remains capitalized. Commits made in this repository's root (the main Android project), including commits that only update a submodule gitlink, must omit `[Android]`. Use `[Android]` only for Android-specific commits made inside a mixed-scope repository, including the core `/Perimeter` project, so they are distinguished from upstream or cross-platform changes.
 - Make every commit description standalone and describe the completed change. Do not include instructions about what to perform, test, stage, validate, or fix, and do not make a commit description depend on another commit's description.
 - Write each commit description in imperative mood, beginning with a command such as `Add`, `Update`, `Remove`, or `Fix` rather than a third-person form such as `Adds` or `Updates`.
 - In the plan document, make the first paragraph under each proposed commit the exact standalone commit description; do not add a label such as `Standalone description:` before it.
