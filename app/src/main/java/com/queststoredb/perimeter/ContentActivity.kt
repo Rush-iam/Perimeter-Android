@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -336,15 +335,9 @@ class ContentActivity : Activity() {
             options.dxvkVersion() == "2" && options.renderer() == "d3d9"
         }
 
-    private fun hasVulkan13Support(): Boolean = packageManager.hasSystemFeature(
-        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-        VULKAN_1_3_VERSION
-    )
+    private fun hasVulkan13Support(): Boolean = AndroidVulkanCapabilities.supportsVulkan13()
 
-    private fun hasVulkan11Support(): Boolean = packageManager.hasSystemFeature(
-        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-        VULKAN_1_1_VERSION
-    )
+    private fun hasVulkan11Support(): Boolean = AndroidVulkanCapabilities.supportsVulkan11()
 
     private fun showDxvk2UnsupportedDialog() {
         val dialog = AlertDialog.Builder(this)
@@ -398,8 +391,5 @@ class ContentActivity : Activity() {
         const val LOGO_SIDE_MARGIN_RATIO = 0.10f
         const val SELECT_CONTENT = 1
         const val REQUEST_STORAGE = 2
-        // VK_MAKE_API_VERSION(0, 1, 1, 0) and VK_MAKE_API_VERSION(0, 1, 3, 0).
-        const val VULKAN_1_1_VERSION = 0x00401000
-        const val VULKAN_1_3_VERSION = 0x00403000
     }
 }

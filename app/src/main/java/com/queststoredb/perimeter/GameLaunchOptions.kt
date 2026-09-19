@@ -46,14 +46,8 @@ class GameLaunchOptions(private val context: Context) {
     }
 
     internal fun bestSupportedRenderer(): RendererSelection = when {
-        context.packageManager.hasSystemFeature(
-            android.content.pm.PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-            VULKAN_1_3_VERSION
-        ) -> RendererSelection(DEFAULT_GRAPH, "2")
-        context.packageManager.hasSystemFeature(
-            android.content.pm.PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-            VULKAN_1_1_VERSION
-        ) -> RendererSelection(DEFAULT_GRAPH, "1")
+        AndroidVulkanCapabilities.supportsVulkan13() -> RendererSelection(DEFAULT_GRAPH, "2")
+        AndroidVulkanCapabilities.supportsVulkan11() -> RendererSelection(DEFAULT_GRAPH, "1")
         else -> RendererSelection(SOKOL_GRAPH, null)
     }
 
@@ -107,10 +101,6 @@ class GameLaunchOptions(private val context: Context) {
         private const val SOKOL_GRAPH = "sokol"
         private const val DEFAULT_GRAPH = "d3d9"
         private val DXVK_VERSIONS = setOf("1", "2")
-        // VK_MAKE_API_VERSION(0, 1, 1, 0) and VK_MAKE_API_VERSION(0, 1, 3, 0).
-        private const val VULKAN_1_1_VERSION = 0x00401000
-        private const val VULKAN_1_3_VERSION = 0x00403000
-
         private fun keyOf(argument: String): String =
             argument.removePrefix("tmp_").substringBefore('=')
 

@@ -2,7 +2,6 @@ package com.queststoredb.perimeter
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.os.PowerManager
 import android.text.InputType
@@ -30,14 +29,8 @@ internal class GameLaunchOptionsEditor(
         .associateBy { it.removePrefix("tmp_").substringBefore('=') }
     private val sustainedPerformanceSupported =
         activity.getSystemService(PowerManager::class.java)?.isSustainedPerformanceModeSupported == true
-    private val vulkan13Supported = activity.packageManager.hasSystemFeature(
-        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-        VULKAN_1_3_VERSION
-    )
-    private val vulkan11Supported = activity.packageManager.hasSystemFeature(
-        PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-        VULKAN_1_1_VERSION
-    )
+    private val vulkan13Supported = AndroidVulkanCapabilities.supportsVulkan13()
+    private val vulkan11Supported = AndroidVulkanCapabilities.supportsVulkan11()
     private val readers = linkedMapOf<String, () -> String?>()
     private val resetters = mutableListOf<() -> Unit>()
     private var contentStatus: TextView? = null
@@ -390,8 +383,5 @@ internal class GameLaunchOptionsEditor(
         const val SOKOL_INDEX = 2
         const val DXVK_1_INDEX = 1
         const val DXVK_2_INDEX = 0
-        // VK_MAKE_API_VERSION(0, 1, 1, 0) and VK_MAKE_API_VERSION(0, 1, 3, 0).
-        const val VULKAN_1_1_VERSION = 0x00401000
-        const val VULKAN_1_3_VERSION = 0x00403000
     }
 }

@@ -5,6 +5,13 @@ project("perimeter_android")
 
 find_package(games-frame-pacing REQUIRED CONFIG)
 
+# The launcher needs to query Vulkan before the SDL/game process is started.
+# Keep this probe independent from the engine and load Vulkan dynamically so
+# devices without a Vulkan loader can still use the GLES fallback.
+add_library(perimeter_vulkan_probe SHARED AndroidVulkanCapabilities.cpp)
+target_compile_features(perimeter_vulkan_probe PRIVATE cxx_std_17)
+target_link_libraries(perimeter_vulkan_probe PRIVATE log dl)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FetchContent)
