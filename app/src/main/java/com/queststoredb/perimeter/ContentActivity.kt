@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -53,7 +54,10 @@ class ContentActivity : Activity() {
         }
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.argb(178, 0, 0, 0))
+            background = GradientDrawable().apply {
+                setColor(Color.argb(178, 0, 0, 0))
+                cornerRadius = MAIN_CONTROLS_CORNER_RADIUS_PX.toFloat()
+            }
             elevation = dp(MAIN_CONTROLS_ELEVATION_DP).toFloat()
             layoutParams = LinearLayout.LayoutParams(dp(MAIN_CONTROLS_WIDTH_DP),
                 LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -385,6 +389,7 @@ class ContentActivity : Activity() {
 
     private companion object {
         const val MAIN_CONTROLS_WIDTH_DP = 300
+        const val MAIN_CONTROLS_CORNER_RADIUS_PX = 6
         const val MAIN_CONTROLS_ELEVATION_DP = 8
         const val MAIN_ENTRY_SPACING_DP = 8
         const val MAX_LOGO_WIDTH_DP = 500
