@@ -12,8 +12,14 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $Scenario,
 
-    [ValidateSet("debug", "release")]
+    [ValidateSet("debug", "release", "releaseBenchmark")]
     [string] $BuildType = "debug",
+
+    [ValidateSet("O2", "O3")]
+    [string] $Optimization = "O2",
+
+    [ValidateSet("OFF", "ON")]
+    [string] $ThinLto = "OFF",
 
     [ValidateSet(50, 75, 100)]
     [int] $ResolutionScale = 75,
@@ -24,10 +30,16 @@ param(
     [ValidateRange(0, 3600)]
     [int] $WarmupSeconds = 10,
 
+    [ValidateRange(0, 3600)]
+    [int] $HighCpuLoadSeconds = 3,
+
+    [ValidateRange(100, 10000)]
+    [int] $PostLoadFlushWaitMilliseconds = 2000,
+
     [ValidateRange(1, 3600)]
     [int] $CaptureSeconds = 60,
 
-    [ValidateSet("none", "held-square-5x", "zoom-out-in-7x", "zoom-out-in-1x")]
+    [ValidateSet("none", "held-square-5x", "held-square-15x", "zoom-out-in-7x", "zoom-out-in-21x", "zoom-out-in-1x")]
     [string] $CameraPan = "held-square-5x",
 
     [switch] $AssumeReady,
@@ -84,12 +96,38 @@ function Save-AdbOutput {
     @(Invoke-Adb @Arguments) | Set-Content -LiteralPath (Join-Path $outputDirectory $Name) -Encoding utf8
 }
 
+function Write-NativeControl {
+    param([Parameter(Mandatory)] [string] $Value)
+    # Avoid nested sh -c redirection here. On Windows adb, that quoting can
+    # reach the device shell without the intended working directory. Feeding
+    # the marker to toybox tee keeps the run-as path and file creation stable.
+    $Value | & $Adb @adbPrefix shell run-as com.queststoredb.perimeter toybox tee files/camera-motion-control | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb failed while writing the native timing control marker."
+    }
+}
+
 function Flush-NativeTiming {
+    param([int] $WaitMilliseconds = 1000)
     # Native timing uses a large userspace buffer to keep CSV writes off the
     # render-critical path. Flush before and after the measurement so a valid
     # tail from the previous run cannot be mistaken for a live boundary.
-    Invoke-Adb shell "run-as com.queststoredb.perimeter sh -c 'printf flush-frame-timing-v1 > files/camera-motion-control'" | Out-Null
-    Start-Sleep -Seconds 1
+    Write-NativeControl "flush-frame-timing-v1"
+    Start-Sleep -Milliseconds $WaitMilliseconds
+}
+
+function Invoke-HighCpuLoad {
+    if ($HighCpuLoadSeconds -le 0) {
+        return
+    }
+
+    Write-Host "High CPU load: $HighCpuLoadSeconds seconds across all available device CPUs"
+    # Use one busy toybox process per available CPU and clean them up before
+    # the command returns. Keep the command free of nested quotes because adb
+    # passes the remote shell expression through another argument parser.
+    $loadCommand = 'pids=""; for i in $(seq 1 $(nproc)); do yes >/dev/null & pids="$pids $!"; done; sleep ' +
+        $HighCpuLoadSeconds + '; for pid in $pids; do kill "$pid" 2>/dev/null || true; done'
+    Invoke-Adb shell "sh -c '$loadCommand'" | Out-Null
 }
 
 function Get-NativeTimingTail {
@@ -106,17 +144,23 @@ $metadata = [ordered]@{
     revision = $revision
     workingTreeDirty = $dirty
     buildType = $BuildType
+    optimizationLevel = $Optimization
+    thinLto = $ThinLto
     deviceSerial = $Serial
     manufacturer = ((Invoke-Adb shell getprop ro.product.manufacturer) -join "").Trim()
     model = ((Invoke-Adb shell getprop ro.product.model) -join "").Trim()
     androidVersion = ((Invoke-Adb shell getprop ro.build.version.release) -join "").Trim()
     androidSdk = ((Invoke-Adb shell getprop ro.build.version.sdk) -join "").Trim()
+    emuiVersion = ((Invoke-Adb shell getprop ro.build.version.emui) -join "").Trim()
+    displayBuild = ((Invoke-Adb shell getprop ro.build.display.id) -join "").Trim()
     buildFingerprint = ((Invoke-Adb shell getprop ro.build.fingerprint) -join "").Trim()
     renderer = $Renderer
     resolutionScalePercent = $ResolutionScale
     frameRateSetting = $FrameRate
     scenario = $Scenario
     warmupSeconds = $WarmupSeconds
+    highCpuLoadSeconds = $HighCpuLoadSeconds
+    postLoadFlushWaitMilliseconds = $PostLoadFlushWaitMilliseconds
     captureSeconds = $CaptureSeconds
     cameraPan = $CameraPan
     run = $Run
@@ -126,6 +170,9 @@ $metadata | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputDirector
 Save-AdbOutput "display.txt" @("shell", "dumpsys", "display")
 Save-AdbOutput "surfaceflinger.txt" @("shell", "dumpsys", "SurfaceFlinger")
 Save-AdbOutput "package.txt" @("shell", "dumpsys", "package", "com.queststoredb.perimeter")
+Save-AdbOutput "battery-before.txt" @("shell", "dumpsys", "battery")
+Save-AdbOutput "thermal-before.txt" @("shell", "dumpsys", "thermalservice")
+Save-AdbOutput "huawei-power-settings.txt" @("shell", "settings", "get", "system", "SmartModeStatus")
 
 Write-Host "Run $Run ready: $Renderer / $FrameRate / $ResolutionScale%"
 if ($AssumeReady) {
@@ -143,7 +190,9 @@ if ($WarmupSeconds -gt 0) {
     Start-Sleep -Seconds $WarmupSeconds
 }
 
-Flush-NativeTiming
+Invoke-HighCpuLoad
+
+Flush-NativeTiming -WaitMilliseconds $PostLoadFlushWaitMilliseconds
 $startTimingLine = Get-NativeTimingTail
 $startTimingFields = $startTimingLine.Split(',')
 if ($startTimingFields.Count -ne 5 -or $startTimingFields[0] -notmatch '^\d+$') {
@@ -166,21 +215,35 @@ if ($CameraPan -eq "held-square-5x") {
     Write-Host "Camera motion: hold Right, Up, Left, Down for 1 second each; repeat 5 times"
     # Keep the redirection inside run-as. Passing -c and its command as separate
     # adb arguments loses the quoting before it reaches the device shell.
-    Invoke-Adb shell "run-as com.queststoredb.perimeter sh -c 'printf held-square-5x-v1 > files/camera-motion-control'" | Out-Null
+    Write-NativeControl "held-square-5x-v1"
+    Start-Sleep -Seconds $CaptureSeconds
+} elseif ($CameraPan -eq "held-square-15x") {
+    if ($CaptureSeconds -ne 60) {
+        throw "-CaptureSeconds must be 60 when -CameraPan held-square-15x is used."
+    }
+    Write-Host "Camera motion: hold Right, Up, Left, Down for 1 second each; repeat 15 times"
+    Write-NativeControl "held-square-15x-v1"
     Start-Sleep -Seconds $CaptureSeconds
 } elseif ($CameraPan -eq "zoom-out-in-7x") {
     if ($CaptureSeconds -ne 21) {
         throw "-CaptureSeconds must be 21 when -CameraPan zoom-out-in-7x is used."
     }
     Write-Host "Camera motion: zoom out for 1.5 seconds, zoom in for 1.5 seconds; repeat 7 times"
-    Invoke-Adb shell "run-as com.queststoredb.perimeter sh -c 'printf zoom-out-in-7x-v1 > files/camera-motion-control'" | Out-Null
+    Write-NativeControl "zoom-out-in-7x-v1"
+    Start-Sleep -Seconds $CaptureSeconds
+} elseif ($CameraPan -eq "zoom-out-in-21x") {
+    if ($CaptureSeconds -ne 63) {
+        throw "-CaptureSeconds must be 63 when -CameraPan zoom-out-in-21x is used."
+    }
+    Write-Host "Camera motion: zoom out for 1.5 seconds, zoom in for 1.5 seconds; repeat 21 times"
+    Write-NativeControl "zoom-out-in-21x-v1"
     Start-Sleep -Seconds $CaptureSeconds
 } elseif ($CameraPan -eq "zoom-out-in-1x") {
     if ($CaptureSeconds -ne 3) {
         throw "-CaptureSeconds must be 3 when -CameraPan zoom-out-in-1x is used."
     }
     Write-Host "Camera motion: zoom out for 1.5 seconds, zoom in for 1.5 seconds; one cycle"
-    Invoke-Adb shell "run-as com.queststoredb.perimeter sh -c 'printf zoom-out-in-1x-v1 > files/camera-motion-control'" | Out-Null
+    Write-NativeControl "zoom-out-in-1x-v1"
     Start-Sleep -Seconds $CaptureSeconds
 } else {
     Start-Sleep -Seconds $CaptureSeconds
@@ -201,6 +264,8 @@ if ($measurementEndAtFrameId -le $measurementStartAfterFrameId) {
 Save-AdbOutput "logcat.txt" @("logcat", "-d", "-v", "threadtime")
 Save-AdbOutput "gfxinfo-framestats.txt" @("shell", "dumpsys", "gfxinfo", "com.queststoredb.perimeter", "framestats")
 Save-AdbOutput "display-after.txt" @("shell", "dumpsys", "display")
+Save-AdbOutput "battery-after.txt" @("shell", "dumpsys", "battery")
+Save-AdbOutput "thermal-after.txt" @("shell", "dumpsys", "thermalservice")
 Save-AdbOutput "frame-timing.csv" @("exec-out", "run-as", "com.queststoredb.perimeter",
     "cat", "files/frame-timing.csv")
 Save-AdbOutput "frame-work.csv" @("exec-out", "run-as", "com.queststoredb.perimeter",

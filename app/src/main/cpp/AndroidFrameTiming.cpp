@@ -31,12 +31,21 @@ std::string cameraMotionControlPath;
 uint64_t cameraMotionLastPollNs = 0, cameraMotionStartNs = 0;
 int cameraMotionLeg = 0;
 bool cameraMotionActive = false;
-enum class CameraMotionMode { None, HeldSquare, ZoomOutIn, ZoomOutInOnce };
+enum class CameraMotionMode {
+    None,
+    HeldSquare,
+    HeldSquareLong,
+    ZoomOutIn,
+    ZoomOutInLong,
+    ZoomOutInOnce
+};
 CameraMotionMode cameraMotionMode = CameraMotionMode::None;
 constexpr uint64_t kCameraMotionLegNs = 1000000000ull;
 constexpr int kCameraMotionLegCount = 20;
+constexpr int kLongCameraMotionLegCount = 60;
 constexpr uint64_t kZoomMotionLegNs = 1500000000ull;
 constexpr int kZoomMotionLegCount = 14;
+constexpr int kLongZoomMotionLegCount = 42;
 constexpr int kSingleZoomMotionLegCount = 2;
 uint64_t monotonicNs() {
     timespec value{};
@@ -68,12 +77,17 @@ void startCameraMotion(CameraMotionMode mode, uint64_t nowNs) {
     if (mode == CameraMotionMode::ZoomOutIn) {
         __android_log_print(ANDROID_LOG_INFO, kLogTag,
                             "Starting zoom camera motion: 1.5 seconds out, 1.5 seconds in, 7 cycles");
+    } else if (mode == CameraMotionMode::ZoomOutInLong) {
+        __android_log_print(ANDROID_LOG_INFO, kLogTag,
+                            "Starting long zoom camera motion: 1.5 seconds out, 1.5 seconds in, 21 cycles");
     } else if (mode == CameraMotionMode::ZoomOutInOnce) {
         __android_log_print(ANDROID_LOG_INFO, kLogTag,
                             "Starting single zoom camera motion: 1.5 seconds out, 1.5 seconds in");
     } else {
         __android_log_print(ANDROID_LOG_INFO, kLogTag,
-                            "Starting held-square camera motion: 5 cycles, 1 second per leg");
+                            mode == CameraMotionMode::HeldSquareLong
+                                ? "Starting long held-square camera motion: 15 cycles, 1 second per leg"
+                                : "Starting held-square camera motion: 5 cycles, 1 second per leg");
     }
 }
 void updateCameraMotion() {
@@ -96,8 +110,12 @@ void updateCameraMotion() {
         CameraMotionMode mode = CameraMotionMode::None;
         if (controlValue.find("held-square-5x-v1") != std::string::npos) {
             mode = CameraMotionMode::HeldSquare;
+        } else if (controlValue.find("held-square-15x-v1") != std::string::npos) {
+            mode = CameraMotionMode::HeldSquareLong;
         } else if (controlValue.find("zoom-out-in-7x-v1") != std::string::npos) {
             mode = CameraMotionMode::ZoomOutIn;
+        } else if (controlValue.find("zoom-out-in-21x-v1") != std::string::npos) {
+            mode = CameraMotionMode::ZoomOutInLong;
         } else if (controlValue.find("zoom-out-in-1x-v1") != std::string::npos) {
             mode = CameraMotionMode::ZoomOutInOnce;
         }
@@ -109,17 +127,23 @@ void updateCameraMotion() {
     }
     const uint64_t legDurationNs =
         (cameraMotionMode == CameraMotionMode::ZoomOutIn ||
+         cameraMotionMode == CameraMotionMode::ZoomOutInLong ||
          cameraMotionMode == CameraMotionMode::ZoomOutInOnce)
             ? kZoomMotionLegNs : kCameraMotionLegNs;
     const int legCount = cameraMotionMode == CameraMotionMode::ZoomOutIn
         ? kZoomMotionLegCount
+        : cameraMotionMode == CameraMotionMode::ZoomOutInLong
+            ? kLongZoomMotionLegCount
         : cameraMotionMode == CameraMotionMode::ZoomOutInOnce
-            ? kSingleZoomMotionLegCount : kCameraMotionLegCount;
+            ? kSingleZoomMotionLegCount
+            : cameraMotionMode == CameraMotionMode::HeldSquareLong
+                ? kLongCameraMotionLegCount : kCameraMotionLegCount;
     const int nextLeg = static_cast<int>((nowNs - cameraMotionStartNs) / legDurationNs);
     if (nextLeg <= cameraMotionLeg) return;
     if (nextLeg >= legCount) {
         cameraMotionActive = false;
         if (cameraMotionMode == CameraMotionMode::ZoomOutIn ||
+            cameraMotionMode == CameraMotionMode::ZoomOutInLong ||
             cameraMotionMode == CameraMotionMode::ZoomOutInOnce) {
             __android_log_print(ANDROID_LOG_INFO, kLogTag, "Completed zoom camera motion");
         } else {
@@ -281,6 +305,7 @@ bool androidCameraMotionControlHeld(uint32_t control) {
     // ZoomDec=12. This is Android-only benchmark instrumentation.
     if (!cameraMotionActive) return false;
     if (cameraMotionMode == CameraMotionMode::ZoomOutIn ||
+        cameraMotionMode == CameraMotionMode::ZoomOutInLong ||
         cameraMotionMode == CameraMotionMode::ZoomOutInOnce) {
         // Zoom-dec increases camera distance (zoom out); zoom-inc decreases it.
         static constexpr uint32_t controls[] = { 12, 11 };
