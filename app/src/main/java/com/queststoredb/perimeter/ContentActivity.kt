@@ -308,15 +308,19 @@ class ContentActivity : Activity() {
     }
 
     private fun refresh() {
-        if (!storage.hasStorageAccess()) {
-            play.isEnabled = false
-            return
+        val contentAvailable = if (!storage.hasStorageAccess()) {
+            false
+        } else {
+            try {
+                storage.localFilesystemPath() != null
+            } catch (error: Exception) {
+                false
+            }
         }
-        try {
-            val path = storage.localFilesystemPath()
-            play.isEnabled = path != null
-        } catch (error: Exception) {
-            play.isEnabled = false
+        play.setText(if (contentAvailable) R.string.play else R.string.choose_content)
+        play.isEnabled = true
+        play.setOnClickListener {
+            if (contentAvailable) startGameIfReady() else chooseOrGrantAccess()
         }
     }
 
