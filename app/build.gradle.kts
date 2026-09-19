@@ -80,6 +80,11 @@ android {
                 enable = false
             }
         }
+        create("releaseBenchmark") {
+            initWith(getByName("release"))
+            isDebuggable = true
+            matchingFallbacks += listOf("release")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
