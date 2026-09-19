@@ -358,12 +358,12 @@ class ContentActivity : Activity() {
 
     private fun startGame() {
         try {
-            // Replace the setup task with the game. This makes MainActivity the task root,
-            // removes this Activity from the back stack, and still lets Meta Quest assign
-            // fresh panel bounds for the landscape game Activity.
+            // Meta Quest assigns panel bounds when a task is created. Launch the game in its
+            // own task so its landscape Activity does not inherit the launcher's portrait panel.
             startActivity(Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
+            finishAndRemoveTask()
         } catch (error: Exception) {
             showContentError(error)
         }

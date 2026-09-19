@@ -157,6 +157,26 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         } catch(Exception ignored) {
         }
 
+        // Android can report the physical display in the orientation of the
+        // launcher while the game Activity is being transitioned to its
+        // requested orientation. SDL uses these dimensions for the desktop
+        // display mode, so keep their orientation consistent with the game
+        // surface before passing them to native code.
+        int requestedOrientation = SDLActivity.mSingleton.getRequestedOrientation();
+        boolean landscapeRequested = requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE ||
+                requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE ||
+                requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
+        boolean portraitRequested = requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT ||
+                requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT ||
+                requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
+        boolean swapDeviceOrientation = landscapeRequested && nDeviceWidth < nDeviceHeight ||
+                portraitRequested && nDeviceWidth > nDeviceHeight;
+        if (swapDeviceOrientation) {
+            int orientedDeviceWidth = nDeviceWidth;
+            nDeviceWidth = nDeviceHeight;
+            nDeviceHeight = orientedDeviceWidth;
+        }
+
         synchronized(SDLActivity.getContext()) {
             // In case we're waiting on a size change after going fullscreen, send a notification.
             SDLActivity.getContext().notifyAll();
@@ -170,13 +190,11 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         // Prevent a screen distortion glitch,
         // for instance when the device is in Landscape and a Portrait App is resumed.
         boolean skip = false;
-        int requestedOrientation = SDLActivity.mSingleton.getRequestedOrientation();
-
-        if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
+        if (portraitRequested) {
             if (mWidth > mHeight) {
                skip = true;
             }
-        } else if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+        } else if (landscapeRequested) {
             if (mWidth < mHeight) {
                skip = true;
             }
