@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -79,17 +81,38 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreProperties = Properties()
+            val keystorePropertiesFile = rootProject.file("local.properties")
+            if (keystorePropertiesFile.exists()) {
+                keystorePropertiesFile.inputStream().use(keystoreProperties::load)
+            }
+            storeFile = keystoreProperties.getProperty("RELEASE_STORE_FILE")?.let(rootProject::file)
+            storePassword = keystoreProperties.getProperty("RELEASE_STORE_PASSWORD")
+            keyAlias = keystoreProperties.getProperty("RELEASE_KEY_ALIAS")
+            keyPassword = keystoreProperties.getProperty("RELEASE_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = false
             }
         }
         create("releaseBenchmark") {
             initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".debug"
+            resValue("string", "app_name", "Perimeter Dev")
             isDebuggable = true
             matchingFallbacks += listOf("release")
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+            resValue("string", "app_name", "Perimeter Dev")
         }
     }
     compileOptions {
@@ -105,6 +128,7 @@ android {
     buildFeatures {
         buildConfig = true
         prefab = true
+        resValues = true
         viewBinding = true
     }
 }

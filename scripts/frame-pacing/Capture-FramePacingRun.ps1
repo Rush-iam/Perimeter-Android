@@ -51,6 +51,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+$ApplicationId = if ($BuildType -eq "release") {
+    "com.queststoredb.perimeter"
+} else {
+    "com.queststoredb.perimeter.debug"
+}
 
 if (-not $Adb) {
     $Adb = Join-Path $env:LOCALAPPDATA "Android/Sdk/platform-tools/adb.exe"
@@ -101,7 +106,7 @@ function Write-NativeControl {
     # Avoid nested sh -c redirection here. On Windows adb, that quoting can
     # reach the device shell without the intended working directory. Feeding
     # the marker to toybox tee keeps the run-as path and file creation stable.
-    $Value | & $Adb @adbPrefix shell run-as com.queststoredb.perimeter toybox tee files/camera-motion-control | Out-Null
+    $Value | & $Adb @adbPrefix shell run-as $ApplicationId toybox tee files/camera-motion-control | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "adb failed while writing the native timing control marker."
     }
@@ -131,7 +136,7 @@ function Invoke-HighCpuLoad {
 }
 
 function Get-NativeTimingTail {
-    return ((Invoke-Adb "exec-out" "run-as" "com.queststoredb.perimeter" "tail" "-n" "1" "files/frame-timing.csv") -join "").Trim()
+    return ((Invoke-Adb "exec-out" "run-as" $ApplicationId "tail" "-n" "1" "files/frame-timing.csv") -join "").Trim()
 }
 
 $revision = (& git -c "safe.directory=$($projectRoot -replace '\\', '/')" -C $projectRoot rev-parse HEAD).Trim()
@@ -169,7 +174,7 @@ $metadata | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputDirector
 
 Save-AdbOutput "display.txt" @("shell", "dumpsys", "display")
 Save-AdbOutput "surfaceflinger.txt" @("shell", "dumpsys", "SurfaceFlinger")
-Save-AdbOutput "package.txt" @("shell", "dumpsys", "package", "com.queststoredb.perimeter")
+Save-AdbOutput "package.txt" @("shell", "dumpsys", "package", $ApplicationId)
 Save-AdbOutput "battery-before.txt" @("shell", "dumpsys", "battery")
 Save-AdbOutput "thermal-before.txt" @("shell", "dumpsys", "thermalservice")
 Save-AdbOutput "huawei-power-settings.txt" @("shell", "settings", "get", "system", "SmartModeStatus")
@@ -183,8 +188,8 @@ if ($AssumeReady) {
 }
 
 Invoke-Adb logcat -c | Out-Null
-Invoke-Adb shell dumpsys gfxinfo com.queststoredb.perimeter reset | Out-Null
-Invoke-Adb shell run-as com.queststoredb.perimeter rm -f files/camera-motion-control | Out-Null
+Invoke-Adb shell dumpsys gfxinfo $ApplicationId reset | Out-Null
+Invoke-Adb shell run-as $ApplicationId rm -f files/camera-motion-control | Out-Null
 if ($WarmupSeconds -gt 0) {
     Write-Host "Warm-up: $WarmupSeconds seconds"
     Start-Sleep -Seconds $WarmupSeconds
@@ -196,7 +201,7 @@ Flush-NativeTiming -WaitMilliseconds $PostLoadFlushWaitMilliseconds
 $startTimingLine = Get-NativeTimingTail
 $startTimingFields = $startTimingLine.Split(',')
 if ($startTimingFields.Count -ne 5 -or $startTimingFields[0] -notmatch '^\d+$') {
-    $headerLine = ((Invoke-Adb "exec-out" "run-as" "com.queststoredb.perimeter" "head" "-n" "1" "files/frame-timing.csv") -join "").Trim()
+    $headerLine = ((Invoke-Adb "exec-out" "run-as" $ApplicationId "head" "-n" "1" "files/frame-timing.csv") -join "").Trim()
     if ($headerLine -eq "frame_id,frame_start_ns,render_submit_ns,present_start_ns,present_end_ns") {
         throw "Native frame timing has no row after the warm-up flush. Keep the game on the HUD and retry."
     } else {
@@ -262,16 +267,16 @@ if ($measurementEndAtFrameId -le $measurementStartAfterFrameId) {
 }
 
 Save-AdbOutput "logcat.txt" @("logcat", "-d", "-v", "threadtime")
-Save-AdbOutput "gfxinfo-framestats.txt" @("shell", "dumpsys", "gfxinfo", "com.queststoredb.perimeter", "framestats")
+Save-AdbOutput "gfxinfo-framestats.txt" @("shell", "dumpsys", "gfxinfo", $ApplicationId, "framestats")
 Save-AdbOutput "display-after.txt" @("shell", "dumpsys", "display")
 Save-AdbOutput "battery-after.txt" @("shell", "dumpsys", "battery")
 Save-AdbOutput "thermal-after.txt" @("shell", "dumpsys", "thermalservice")
-Save-AdbOutput "frame-timing.csv" @("exec-out", "run-as", "com.queststoredb.perimeter",
+Save-AdbOutput "frame-timing.csv" @("exec-out", "run-as", $ApplicationId,
     "cat", "files/frame-timing.csv")
-Save-AdbOutput "frame-work.csv" @("exec-out", "run-as", "com.queststoredb.perimeter",
+Save-AdbOutput "frame-work.csv" @("exec-out", "run-as", $ApplicationId,
     "cat", "files/frame-work.csv")
 if ($Renderer -eq "dxvk1") {
-    & $Adb @adbPrefix exec-out run-as com.queststoredb.perimeter cat files/dxvk-frame-timing.csv |
+    & $Adb @adbPrefix exec-out run-as $ApplicationId cat files/dxvk-frame-timing.csv |
         Set-Content -LiteralPath (Join-Path $outputDirectory "dxvk-frame-timing.csv") -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw "DXVK internal frame timing is unavailable." }
 }
