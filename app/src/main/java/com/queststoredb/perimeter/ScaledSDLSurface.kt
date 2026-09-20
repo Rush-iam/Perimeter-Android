@@ -1,7 +1,6 @@
 package com.queststoredb.perimeter
 
 import android.content.Context
-import android.view.SurfaceHolder
 import org.libsdl.app.SDLSurface
 
 /**
@@ -10,14 +9,10 @@ import org.libsdl.app.SDLSurface
  */
 class ScaledSDLSurface(context: Context) : SDLSurface(context) {
     private val resolutionScalePercent = ResolutionScale.load(context)
-    private var renderWidth = 1
-    private var renderHeight = 1
 
     init {
         val size = ResolutionScale.renderSize(context, resolutionScalePercent)
-        renderWidth = size.first
-        renderHeight = size.second
-        holder.setFixedSize(renderWidth, renderHeight)
+        holder.setFixedSize(size.first, size.second)
         // A fixed Surface buffer is not automatically stretched by all Android compositor
         // implementations. Scale the surface layer to the full View bounds explicitly.
         val inverseScale = 100f / resolutionScalePercent
@@ -26,14 +21,4 @@ class ScaledSDLSurface(context: Context) : SDLSurface(context) {
         scaleX = inverseScale
         scaleY = inverseScale
     }
-
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        renderWidth = width
-        renderHeight = height
-        ResolutionScale.rememberGameSurfaceSize(
-            getContext(), width, height, resolutionScalePercent
-        )
-        super.surfaceChanged(holder, format, width, height)
-    }
-
 }
