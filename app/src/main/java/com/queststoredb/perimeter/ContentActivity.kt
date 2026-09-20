@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -38,6 +39,9 @@ class ContentActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (isRunningOnHorizonOs()) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
         storage = GameContentStorage(this)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -388,12 +392,8 @@ class ContentActivity : Activity() {
 
     private fun startGame() {
         try {
-            // Meta Quest assigns panel bounds when a task is created. Launch the game in its
-            // own task so its landscape Activity does not inherit the launcher's portrait panel.
-            startActivity(Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
-            finishAndRemoveTask()
+            startActivity(Intent(this, MainActivity::class.java))
+            finish()
         } catch (error: Exception) {
             showContentError(error)
         }
@@ -413,6 +413,10 @@ class ContentActivity : Activity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
+    private fun isRunningOnHorizonOs(): Boolean =
+        packageManager.hasSystemFeature(FEATURE_HORIZON_OS) ||
+            packageManager.hasSystemFeature(FEATURE_STANDALONE_VR)
+
     private companion object {
         const val MAIN_CONTROLS_WIDTH_DP = 300
         const val MAIN_CONTROLS_CORNER_RADIUS_PX = 6
@@ -422,5 +426,7 @@ class ContentActivity : Activity() {
         const val LOGO_SIDE_MARGIN_RATIO = 0.10f
         const val SELECT_CONTENT = 1
         const val REQUEST_STORAGE = 2
+        const val FEATURE_HORIZON_OS = "horizonos.software.horizon_os"
+        const val FEATURE_STANDALONE_VR = "oculus.hardware.standalone_vr"
     }
 }
