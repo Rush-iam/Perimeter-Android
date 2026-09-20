@@ -197,10 +197,11 @@ void androidFrameTimingConfigure(bool enabled) {
     __android_log_print(ANDROID_LOG_INFO, kLogTag, "Recording %s", path.c_str());
 }
 void androidDxvkDiagnosticConfigure(const char* maxFrameLatency, bool singlePresentInterval2) {
+    (void)singlePresentInterval2;
     unsetenv("DXVK_CONFIG_FILE");
     unsetenv("DXVK_ANDROID_SWAPPY");
     const bool latencyOne = maxFrameLatency && std::string(maxFrameLatency) == "1";
-    if (!latencyOne && !singlePresentInterval2) return;
+    if (!latencyOne) return;
     char* directory = SDL_GetPrefPath("K-D Lab", "Perimeter");
     if (!directory) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
@@ -215,15 +216,6 @@ void androidDxvkDiagnosticConfigure(const char* maxFrameLatency, bool singlePres
         return;
     }
     if (latencyOne) std::fputs("d3d9.maxFrameLatency = 1\n", config);
-    if (singlePresentInterval2) {
-        std::fputs("d3d9.maxFrameRate = 0\n", config);
-        // DXVK's bool parser accepts lowercase true/false tokens.
-        std::fputs("d3d9.androidSinglePresentInterval2 = true\n", config);
-        // Keep the Android-specific pacing choice available even when the
-        // DXVK config file is not discovered by the native compatibility path.
-        setenv("DXVK_ANDROID_SINGLE_PRESENT", "1", 1);
-        setenv("DXVK_ANDROID_SWAPPY", "1", 1);
-    }
     std::fclose(config);
     setenv("DXVK_CONFIG_FILE", path.c_str(), 1);
     __android_log_print(ANDROID_LOG_INFO, kLogTag, "DXVK diagnostic config: %s", path.c_str());
