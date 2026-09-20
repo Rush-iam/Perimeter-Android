@@ -455,7 +455,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         float y = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
         // Move first so the core captures the map anchor at the gesture midpoint.
         SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, false);
-        SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_GRAVE);
+        SDLActivity.onNativeCameraDrag(true);
         mTwoFingerDragActive = true;
     }
 
@@ -484,7 +484,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         float y = firstIndex >= 0 && secondIndex >= 0
                 ? (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f
                 : 0.0f;
-        SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_GRAVE);
+        SDLActivity.onNativeCameraDrag(false);
         mTwoFingerDragActive = false;
     }
 

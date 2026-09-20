@@ -240,10 +240,11 @@ endforeach()
 unset(_perimeter_android_sdl_consumer)
 unset(_perimeter_android_native_targets)
 
-# Add Android-specific logging redirector to the engine target
+# Add Android-specific functions to the engine target
 target_sources(perimeter PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/AndroidLog.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidFrameTiming.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidFrameTiming.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidTouchInput.cpp")
 if(PERIMETER_ANDROID_DXVK)
     target_sources(perimeter PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/AndroidDxvkLoader.cpp")
