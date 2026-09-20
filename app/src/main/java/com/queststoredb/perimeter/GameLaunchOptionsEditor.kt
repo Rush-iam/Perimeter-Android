@@ -343,7 +343,7 @@ internal class GameLaunchOptionsEditor(
         val specs = listOf(
             Option("", "locale", "Language", Kind.CHOICE, choices = listOf(
                 "English" to "English", "Russian" to "Russian"), defaultChoiceLabel = "Last used"),
-            Option("", "start_splash", "Disable intro movies", Kind.INVERTED_BOOLEAN),
+            Option("", "start_splash", "Skip intro movies", Kind.INVERTED_BOOLEAN),
             Option("", GRAPH_KEY, "Graphics renderer", Kind.CHOICE),
             Option("", "show_fps", "Show FPS counter", Kind.TOGGLE),
             Option("", "sustained_performance", "Android Sustained Performance Mode", Kind.TOGGLE,
