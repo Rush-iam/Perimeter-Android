@@ -64,7 +64,7 @@ class ContentActivity : Activity() {
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.argb(178, 0, 0, 0))
+                setColor(getColor(R.color.launcher_controls_background))
                 cornerRadius = MAIN_CONTROLS_CORNER_RADIUS_PX.toFloat()
             }
             elevation = dp(MAIN_CONTROLS_ELEVATION_DP).toFloat()
