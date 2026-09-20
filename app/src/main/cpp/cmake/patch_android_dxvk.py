@@ -1,7 +1,8 @@
-"""Small, idempotent Android adaptations for the pinned DXVK source only.
+"""Apply Android adaptations to a disposable copy of pinned DXVK source.
 
-Fail on source drift rather than silently applying a partial patch. The Vulkan
-loader already supports libvulkan.so; SDL still owns Android surface creation.
+The caller supplies a clean staging tree. Fail on source drift rather than
+silently applying a partial patch. The Vulkan loader already supports
+libvulkan.so; SDL still owns Android surface creation.
 """
 import pathlib
 import re

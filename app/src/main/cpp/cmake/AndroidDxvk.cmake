@@ -154,7 +154,9 @@ endmacro()
 # This target is deliberately independent of Perimeter's desktop DXVK builder.
 function(_android_add_dxvk_generation
         generation sdl_include_dir swappy_target sdl_patch_stamp sdl_patch_target)
-    set(android_dxvk_name "android_dxvk_source_v${generation}")
+    # Use a new cache namespace for the immutable source transition. Older
+    # android_dxvk_source_v1/v2 entries may already contain in-place patches.
+    set(android_dxvk_name "dxvk_pristine_v${generation}")
 
     if(generation STREQUAL "1")
         set(android_dxvk_git_repository https://github.com/IonAgorria/dxvk-native)
@@ -222,17 +224,43 @@ function(_android_add_dxvk_generation
 
     set(dxvk_build "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk-v${generation}")
     file(MAKE_DIRECTORY "${dxvk_build}")
+    # Keep the FetchContent checkout immutable. Patching a persistent source
+    # directory makes removing or changing a patch dependent on cache history.
+    # The generated staging tree is disposable and is rebuilt whenever the
+    # patch script or source identity changes.
+    set(android_dxvk_patched_source_dir "${dxvk_build}/patched-source")
+    # CMake validates imported include directories during configuration, before
+    # the build-time staging command has copied the source tree.
+    file(MAKE_DIRECTORY
+        "${android_dxvk_patched_source_dir}/include/native/directx"
+        "${android_dxvk_patched_source_dir}/include/native/windows")
+    set(android_dxvk_source_inputs "${dxvk_build}/source-inputs.txt")
+    string(JOIN "\n" android_dxvk_source_inputs_content
+        "source_dir=${android_dxvk_source_dir}"
+        "git_repository=${android_dxvk_git_repository}"
+        "git_revision=${android_dxvk_git_tag}"
+        "generation=${generation}"
+        "variant=${android_dxvk_variant}"
+        "")
+    file(CONFIGURE OUTPUT "${android_dxvk_source_inputs}"
+        CONTENT "${android_dxvk_source_inputs_content}" @ONLY)
+
     set(android_dxvk_patch_script
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_dxvk.py")
     set(android_dxvk_patch_stamp
         "${dxvk_build}/source-patched.stamp")
     set(android_dxvk_patch_target "android_dxvk_patch_v${generation}")
     add_custom_command(OUTPUT "${android_dxvk_patch_stamp}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${dxvk_build}"
+        COMMAND "${CMAKE_COMMAND}" -E rm -rf
+            "${android_dxvk_patched_source_dir}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${android_dxvk_patched_source_dir}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "${android_dxvk_source_dir}" "${android_dxvk_patched_source_dir}"
         COMMAND "${ANDROID_DXVK_PYTHON}" "${android_dxvk_patch_script}"
-            "${android_dxvk_source_dir}" "${android_dxvk_variant}"
+            "${android_dxvk_patched_source_dir}" "${android_dxvk_variant}"
         COMMAND "${CMAKE_COMMAND}" -E touch "${android_dxvk_patch_stamp}"
-        DEPENDS "${android_dxvk_patch_script}"
+        DEPENDS "${android_dxvk_patch_script}" "${android_dxvk_source_inputs}"
         COMMENT "Patching Android DXVK v${generation} sources"
         VERBATIM)
     add_custom_target(${android_dxvk_patch_target}
@@ -276,7 +304,7 @@ function(_android_add_dxvk_generation
 
     # The generated setup script uses these generic names so both independent
     # instances can share the same template.
-    set(android_dxvk_source_SOURCE_DIR "${android_dxvk_source_dir}")
+    set(android_dxvk_source_SOURCE_DIR "${android_dxvk_patched_source_dir}")
     set(android_dxvk_setup_script "${dxvk_build}/run-meson-setup.cmake")
     configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/run_android_dxvk_meson.cmake.in"
         "${android_dxvk_setup_script}" @ONLY)
@@ -286,7 +314,7 @@ function(_android_add_dxvk_generation
         "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libdxvk_d3d9_v${generation}.so")
     set(android_dxvk_build_target "android_dxvk_build_v${generation}")
     ExternalProject_Add(${android_dxvk_build_target}
-        SOURCE_DIR "${android_dxvk_source_dir}"
+        SOURCE_DIR "${android_dxvk_patched_source_dir}"
         BINARY_DIR "${dxvk_build}/build"
         DEPENDS ${sdl_patch_target} ${android_dxvk_patch_target}
         DOWNLOAD_COMMAND ""
@@ -301,6 +329,7 @@ function(_android_add_dxvk_generation
         DEPENDEES patch
         DEPENDERS configure
         DEPENDS
+            "${android_dxvk_source_inputs}"
             "${android_dxvk_inputs}"
             "${dxvk_build}/android.cross"
             "${dxvk_build}/host.native"
@@ -313,7 +342,7 @@ function(_android_add_dxvk_generation
     add_library(AndroidDxvk::D3D9_v${generation} SHARED IMPORTED GLOBAL)
     set_target_properties(AndroidDxvk::D3D9_v${generation} PROPERTIES
         IMPORTED_LOCATION "${dxvk_library}"
-        INTERFACE_INCLUDE_DIRECTORIES "${android_dxvk_source_dir}/include/native/directx;${android_dxvk_source_dir}/include/native/windows")
+        INTERFACE_INCLUDE_DIRECTORIES "${android_dxvk_patched_source_dir}/include/native/directx;${android_dxvk_patched_source_dir}/include/native/windows")
     if(generation STREQUAL "1")
         target_link_libraries(AndroidDxvk::D3D9_v${generation} INTERFACE SDL2::SDL2)
     endif()
@@ -330,8 +359,8 @@ function(_android_add_dxvk_generation
         DEPENDS "${dxvk_packaged_library}")
 
     set(android_dxvk_header_dirs
-        "${android_dxvk_source_dir}/include/native/directx"
-        "${android_dxvk_source_dir}/include/native/windows"
+        "${android_dxvk_patched_source_dir}/include/native/directx"
+        "${android_dxvk_patched_source_dir}/include/native/windows"
         PARENT_SCOPE)
     set(android_dxvk_package_targets "${android_dxvk_package_target}"
         PARENT_SCOPE)
