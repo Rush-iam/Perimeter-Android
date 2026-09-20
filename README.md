@@ -43,6 +43,7 @@ has been tested)
 ## Controls
 
 - Single-finger touch: left mouse button
+- Single-finger hold: right mouse button
 - Two-finger tap: right mouse button
 - Two-finger drag: move the camera
 - Pinch: zoom in or out
