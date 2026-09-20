@@ -98,6 +98,7 @@
 - Record native DXVK timing and, when analyzing presentation, run the passive SurfaceFlinger sampler concurrently.
 
 ### Commit Plan Workflow
+- The commit title and description conventions below apply to every commit created in this repository, including direct commit requests that do not use a commit-splitting plan.
 - When asked to prepare a commit-splitting plan, inspect the Git repository named by the user. If the path is a nested repository or submodule, run Git from that repository's root; do not substitute the parent repository.
 - Respect the requested change state exactly: use `git diff --cached` for staged changes and `git diff` for unstaged tracked changes. Do not stage, unstage, commit, or otherwise alter the index while preparing the plan.
 - If the requested repository/state has no changes, report that fact instead of analyzing another repository or change state.
