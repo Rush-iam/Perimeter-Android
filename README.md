@@ -14,6 +14,8 @@ The Android port is in active development and should be considered an early
 testing release. Bugs, crashes, visual glitches, device-specific issues, and
 incomplete features are possible.
 
+Please report problems through [GitHub Issues](../../issues).
+
 ## Requirements
 
 - Android 10+ (64-bit ARM)
@@ -55,16 +57,6 @@ The app autoselects the best supported renderer. You can change it in **Options*
 - **DXVK 2.x / Vulkan 1.3** — preferred.
 - **DXVK 1.x / Vulkan 1.1** — for older devices.
 - **Sokol / GLES3** — legacy for devices without Vulkan 1.1+ support.
-
-## Reporting problems
-
-Please report problems through [GitHub Issues](../../issues). Include:
-
-- Device model
-- Android version
-- Selected renderer
-- What happened and how to reproduce it
-- Screenshots or video, if available
 
 ## Credits and license
 
