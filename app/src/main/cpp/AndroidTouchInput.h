@@ -3,3 +3,4 @@
 #include <SDL_stdinc.h>
 
 Uint32 androidTouchCameraDragEventType();
+Uint32 androidTouchTwoFingerGestureEventType();

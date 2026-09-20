@@ -58,6 +58,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private final float mTwoFingerTapSlop;
     private final float mTwoFingerZoomStep;
     private float mTwoFingerLastSpan;
+    private float mTwoFingerLastMidpointY;
     private static final long TWO_FINGER_DRAG_GRACE_PERIOD_MS = 100L;
     private boolean mTwoFingerDragActive;
     private boolean mPendingSingleTouch;
@@ -391,6 +392,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 mTwoFingerTapSecondY = event.getY(1);
                 mTwoFingerTapStartTime = event.getEventTime();
                 mTwoFingerLastSpan = twoFingerSpan(event, 0, 1);
+                mTwoFingerLastMidpointY = (event.getY(0) + event.getY(1)) * 0.5f;
             } else {
                 mTwoFingerTapCandidate = false;
                 resetTwoFingerZoom();
@@ -422,7 +424,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY)) {
                 mTwoFingerTapCandidate = false;
                 beginTwoFingerDrag(event, firstIndex, secondIndex);
-                updateTwoFingerZoom(event, firstIndex, secondIndex);
+                updateTwoFingerGesture(event, firstIndex, secondIndex);
             }
             return false;
         }
@@ -469,7 +471,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         float x = (event.getX(firstIndex) + event.getX(secondIndex)) * 0.5f;
         float y = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
         SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, false);
-        updateTwoFingerZoom(event, firstIndex, secondIndex);
+        updateTwoFingerGesture(event, firstIndex, secondIndex);
     }
 
     private void endTwoFingerDrag(MotionEvent event) {
@@ -488,18 +490,20 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mTwoFingerDragActive = false;
     }
 
-    private void updateTwoFingerZoom(MotionEvent event, int firstIndex, int secondIndex) {
+    private void updateTwoFingerGesture(MotionEvent event, int firstIndex, int secondIndex) {
+        float midpointY = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
+        float verticalDelta = midpointY - mTwoFingerLastMidpointY;
+        mTwoFingerLastMidpointY = midpointY;
+
         float span = twoFingerSpan(event, firstIndex, secondIndex);
         float spanDelta = span - mTwoFingerLastSpan;
         mTwoFingerLastSpan = span;
+        // Menu wheel direction is opposite screen Y: dragging up scrolls up.
+        float wheelDelta = -verticalDelta / mTwoFingerZoomStep;
         float zoomDelta = spanDelta / mTwoFingerZoomStep;
-        if (zoomDelta == 0.0f) {
-            return;
+        if (wheelDelta != 0.0f || zoomDelta != 0.0f) {
+            SDLActivity.onNativeTwoFingerGesture(wheelDelta, zoomDelta);
         }
-
-        // SDL retains this fractional value in SDL_MouseWheelEvent.preciseY.
-        // One mTwoFingerZoomStep still equals the former one-wheel-tick speed.
-        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_SCROLL, 0.0f, zoomDelta, false);
     }
 
     private float twoFingerSpan(MotionEvent event, int firstIndex, int secondIndex) {
@@ -510,6 +514,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
     private void resetTwoFingerZoom() {
         mTwoFingerLastSpan = 0.0f;
+        mTwoFingerLastMidpointY = 0.0f;
     }
 
     private void emitRightClick(float x, float y) {
