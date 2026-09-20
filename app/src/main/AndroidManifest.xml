@@ -28,10 +28,10 @@
             android:exported="true">
             <!-- Landscape initial panel bounds for Quest; Android phones remain orientation-flexible. -->
             <layout
-                android:defaultWidth="2048dp"
-                android:defaultHeight="1152dp"
-                android:minWidth="1024dp"
-                android:minHeight="576dp" />
+                android:defaultWidth="1280dp"
+                android:defaultHeight="720dp"
+                android:minWidth="640dp"
+                android:minHeight="360dp" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
