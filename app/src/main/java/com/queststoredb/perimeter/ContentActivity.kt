@@ -11,6 +11,11 @@ import android.os.Bundle
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.TextPaint
+import android.text.method.LinkMovementMethod
+import android.text.style.URLSpan
 import android.view.Gravity
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -79,6 +84,7 @@ class ContentActivity : Activity() {
             textSize = 12f
             setTextColor(Color.argb(204, 255, 255, 255))
             gravity = Gravity.END
+            movementMethod = LinkMovementMethod.getInstance()
             setLayerType(View.LAYER_TYPE_SOFTWARE, null)
             val shadowOffset = resources.displayMetrics.density
             paint.setShadowLayer(
@@ -234,6 +240,22 @@ class ContentActivity : Activity() {
         buildNote.text = getString(
             R.string.build_note, BuildConfig.VERSION_NAME, BuildConfig.PERIMETER_VERSION
         ) + " • $renderer\n" + getString(R.string.android_port_by)
+        val credit = getString(R.string.android_port_by)
+        buildNote.text = SpannableStringBuilder(buildNote.text).apply {
+            val creditStart = length - credit.length
+            setSpan(
+                object : URLSpan("https://github.com/Rush-iam/Perimeter-Android") {
+                    override fun updateDrawState(ds: TextPaint) {
+                        super.updateDrawState(ds)
+                        ds.color = Color.LTGRAY
+                        ds.isUnderlineText = true
+                    }
+                },
+                creditStart,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
     }
 
     private fun chooseOrGrantAccess() {
