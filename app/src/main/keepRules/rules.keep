@@ -1,5 +1,11 @@
 # Add project specific R8 rules here.
 # AGP will combine all keep rule files in src/main/keepRules to pass to R8
+
+-keep class org.libsdl.app.** { *; }
+
+-keep class com.queststoredb.perimeter.AndroidVulkanCapabilities {
+    private native int nativeSupportedApiVersion();
+}
 #
 # For more details, see
 #   https://d.android.com/r/tools/r8/keep-rules
