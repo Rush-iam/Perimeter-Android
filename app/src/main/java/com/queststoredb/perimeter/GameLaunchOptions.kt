@@ -56,6 +56,11 @@ class GameLaunchOptions(private val context: Context) {
         .lastOrNull { it.removePrefix("tmp_").substringBefore('=') == "sustained_performance" }
         ?.substringAfter('=') == "1"
 
+    /** Whether the Android process memory sampler should run during gameplay. */
+    fun memoryMonitorEnabled(): Boolean = parse(load())
+        .lastOrNull { it.removePrefix("tmp_").substringBefore('=') == MEMORY_MONITOR_KEY }
+        ?.substringAfter('=') == "1"
+
     /** Replaces the renderer argument without discarding unrelated launch options. */
     fun selectRenderer(renderer: String) {
         val arguments = parse(load())
@@ -98,6 +103,7 @@ class GameLaunchOptions(private val context: Context) {
     companion object {
         private const val GRAPH_KEY = "graph"
         private const val DXVK_VERSION_KEY = "android_dxvk_version"
+        internal const val MEMORY_MONITOR_KEY = "android_memory_monitor"
         private const val SOKOL_GRAPH = "sokol"
         private const val DEFAULT_GRAPH = "d3d9"
         private val DXVK_VERSIONS = setOf("1", "2")

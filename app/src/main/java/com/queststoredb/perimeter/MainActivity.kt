@@ -82,6 +82,9 @@ class MainActivity : SDLActivity() {
         return "libperimeter.so"
     }
 
+    override fun isAndroidMemoryMonitorEnabled(): Boolean =
+        GameLaunchOptions(this).memoryMonitorEnabled()
+
     override fun getLibraries(): Array<String> {
         return arrayOf(
             "c++_shared",
@@ -102,7 +105,8 @@ class MainActivity : SDLActivity() {
         val limitToHalfRefresh = FrameRateLimit.load(this)
         val arguments = GameLaunchOptions(this).arguments(path).filterNot {
             val key = it.removePrefix("tmp_").substringBefore('=')
-            key == "android_vsync_interval" || key == "VSync"
+            key == "android_vsync_interval" || key == "VSync" ||
+                key == GameLaunchOptions.MEMORY_MONITOR_KEY
         }
         return (arguments + listOfNotNull(
             "android_vsync_interval=2".takeIf { limitToHalfRefresh },

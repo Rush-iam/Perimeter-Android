@@ -60,6 +60,7 @@ import java.util.Locale;
 */
 public class SDLActivity extends Activity implements View.OnSystemUiVisibilityChangeListener {
     private static final String TAG = "SDL";
+    private AndroidMemoryMonitor memoryMonitor;
     private static final int SDL_MAJOR_VERSION = 2;
     private static final int SDL_MINOR_VERSION = 30;
     private static final int SDL_MICRO_VERSION = 7;
@@ -300,6 +301,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         return new String[0];
     }
 
+    /** Override in the game activity to opt into Android process memory logging. */
+    protected boolean isAndroidMemoryMonitorEnabled() {
+        return false;
+    }
+
     public static void initialize() {
         // The static nature of the singleton and Android quirkyness force us to initialize everything here
         // Otherwise, when exiting the app and returning to it, these variables *keep* their pre exit values
@@ -457,6 +463,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onPause() {
         Log.v(TAG, "onPause()");
+        if (memoryMonitor != null) {
+            memoryMonitor.stop();
+        }
         super.onPause();
 
         if (mHIDDeviceManager != null) {
@@ -472,6 +481,15 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onResume() {
         Log.v(TAG, "onResume()");
         super.onResume();
+
+        if (isAndroidMemoryMonitorEnabled()) {
+            if (memoryMonitor == null) {
+                memoryMonitor = new AndroidMemoryMonitor(this);
+            }
+            memoryMonitor.start();
+        } else if (memoryMonitor != null) {
+            memoryMonitor.stop();
+        }
 
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(false);
@@ -585,6 +603,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onDestroy() {
         Log.v(TAG, "onDestroy()");
+
+        if (memoryMonitor != null) {
+            memoryMonitor.stop();
+        }
 
         if (mHIDDeviceManager != null) {
             HIDDeviceManager.release(mHIDDeviceManager);
