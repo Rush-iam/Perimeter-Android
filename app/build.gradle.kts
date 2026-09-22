@@ -29,9 +29,6 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
-                val androidDxvk = providers.gradleProperty("androidDxvk").orNull
-                    ?.takeIf { it.isNotBlank() } ?: "ON"
-                arguments += "-DPERIMETER_ANDROID_DXVK=$androidDxvk"
                 val androidStacktrace = providers.gradleProperty("androidStacktrace").orNull
                     ?.takeIf { it.isNotBlank() } ?: "ON"
                 arguments += "-DPERIMETER_ANDROID_STACKTRACE=$androidStacktrace"

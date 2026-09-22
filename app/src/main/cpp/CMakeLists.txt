@@ -21,9 +21,8 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDependencyChecks.cmake")
 
 set(PERIMETER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../Perimeter")
 
-# Configure core project options for Android. DXVK is the preferred default
-# for hardware with Vulkan support; Sokol remains available as a fallback.
-option(PERIMETER_ANDROID_DXVK "Build the Android DXVK D3D9 renderer" ON)
+# Configure core project options for Android. DXVK is required for the Android
+# build; Sokol remains available as a fallback for presentation.
 set(OPTION_FFMPEG_MOVIES ON CACHE BOOL "")
 set(OPTION_SOKOL ON CACHE BOOL "" FORCE)
 set(OPTION_SOKOL_API "GLES3" CACHE STRING "" FORCE)
@@ -110,17 +109,13 @@ perimeter_android_verify_git_revision(SDL2_mixer "${sdl2_mixer_SOURCE_DIR}"
 perimeter_android_verify_git_revision(SDL2_image "${sdl2_image_SOURCE_DIR}"
     abcf63aa71b4e3ac32120fa9870a6500ddcdcc89)
 
-if(PERIMETER_ANDROID_DXVK)
-    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDxvk.cmake")
-    android_add_dxvk("${sdl2_SOURCE_DIR}/include" games-frame-pacing::swappy_static)
-    # The renderer compiles against DXVK's stable D3D9 headers only. The
-    # generation-specific DSOs are packaged by android_dxvk_runtime and loaded
-    # by AndroidDxvkLoader after the engine command line is initialized.
-    set(PERIMETER_DXVK_D3D9_TARGET AndroidDxvk::Headers)
-    set(OPTION_D3D9 ON CACHE BOOL "" FORCE)
-else()
-    set(OPTION_D3D9 OFF CACHE BOOL "" FORCE)
-endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDxvk.cmake")
+android_add_dxvk("${sdl2_SOURCE_DIR}/include" games-frame-pacing::swappy_static)
+# The renderer compiles against DXVK's stable D3D9 headers only. The
+# generation-specific DSOs are packaged by android_dxvk_runtime and loaded
+# by AndroidDxvkLoader after the engine command line is initialized.
+set(PERIMETER_DXVK_D3D9_TARGET AndroidDxvk::Headers)
+set(OPTION_D3D9 ON CACHE BOOL "" FORCE)
 
 # FFmpeg Prebuilts for Android
 FetchContent_Declare(
@@ -149,9 +144,7 @@ set_target_properties(ffmpeg PROPERTIES
 add_subdirectory(${PERIMETER_ROOT} perimeter_engine EXCLUDE_FROM_ALL)
 target_sources(Sound PRIVATE AndroidSoundLoader.cpp)
 
-if(PERIMETER_ANDROID_DXVK)
-    add_dependencies(perimeter ${ANDROID_DXVK_RUNTIME_TARGET})
-endif()
+add_dependencies(perimeter ${ANDROID_DXVK_RUNTIME_TARGET})
 
 # RenderSokol compiles independently from the final shared library and needs
 # Swappy's public headers while building its Android GLES presentation path.
@@ -244,13 +237,10 @@ unset(_perimeter_android_native_targets)
 target_sources(perimeter PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/AndroidLog.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/AndroidFrameTiming.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidTouchInput.cpp")
-if(PERIMETER_ANDROID_DXVK)
-    target_sources(perimeter PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/AndroidDxvkLoader.cpp")
-    target_link_libraries(perimeter PRIVATE AndroidDxvk::Headers)
-    target_link_libraries(perimeter PRIVATE dl)
-endif()
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidTouchInput.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/AndroidDxvkLoader.cpp")
+target_link_libraries(perimeter PRIVATE AndroidDxvk::Headers)
+target_link_libraries(perimeter PRIVATE dl)
 target_include_directories(perimeter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(Render PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(RenderSokol PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
