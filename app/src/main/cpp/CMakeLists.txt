@@ -99,9 +99,16 @@ set(SDL2_MIXER_MIDI OFF CACHE BOOL "")
 set(SDL2_MIXER_OPUS OFF CACHE BOOL "")
 set(SDL2_MIXER_FLAC OFF CACHE BOOL "")
 
-FetchContent_MakeAvailable(SDL2 SDL2_net SDL2_mixer SDL2_image)
+FetchContent_Populate(SDL2)
 perimeter_android_verify_git_revision(SDL2 "${sdl2_SOURCE_DIR}"
     9519b9916cd29a14587af0507292f2bd31dd5752)
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDxvk.cmake")
+android_prepare_sdl("${sdl2_SOURCE_DIR}")
+
+# SDL_net, SDL_mixer, and SDL_image consume the SDL2 target configured from
+# the disposable patched tree above.
+FetchContent_MakeAvailable(SDL2_net SDL2_mixer SDL2_image)
 perimeter_android_verify_git_revision(SDL2_net "${sdl2_net_SOURCE_DIR}"
     669e75b84632e2c6cc5c65974ec9e28052cb7a4e)
 perimeter_android_verify_git_revision(SDL2_mixer "${sdl2_mixer_SOURCE_DIR}"
@@ -109,8 +116,7 @@ perimeter_android_verify_git_revision(SDL2_mixer "${sdl2_mixer_SOURCE_DIR}"
 perimeter_android_verify_git_revision(SDL2_image "${sdl2_image_SOURCE_DIR}"
     abcf63aa71b4e3ac32120fa9870a6500ddcdcc89)
 
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AndroidDxvk.cmake")
-android_add_dxvk("${sdl2_SOURCE_DIR}/include" games-frame-pacing::swappy_static)
+android_add_dxvk("${android_sdl_source_dir}/include" games-frame-pacing::swappy_static)
 # The renderer compiles against DXVK's stable D3D9 headers only. The
 # generation-specific DSOs are packaged by android_dxvk_runtime and loaded
 # by AndroidDxvkLoader after the engine command line is initialized.

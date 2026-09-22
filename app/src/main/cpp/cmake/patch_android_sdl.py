@@ -1,30 +1,32 @@
-"""Add the Android pause barrier needed by the Vulkan renderer."""
+"""Add the Android pause barrier to a disposable copy of pinned SDL source."""
 import pathlib
 import sys
 
+if len(sys.argv) != 2:
+    raise SystemExit("Usage: patch_android_sdl.py <source-dir>")
 
 root = pathlib.Path(sys.argv[1])
+if not root.is_dir():
+    raise SystemExit(f"SDL source directory does not exist: {root}")
 
 
 def replace(relative_path, old, new):
     path = root / relative_path
     text = path.read_text(encoding="utf-8")
-    if new in text:
-        return
-    if text.count(old) != 1:
+    count = text.count(old)
+    if count != 1:
         raise RuntimeError(
-            f"Unexpected pinned SDL source in {relative_path}: {old!r}")
+            f"Expected one patch anchor in {relative_path}, found {count}: {old!r}")
     path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
 
 
 def replace_all(relative_path, old, new, expected_count):
     path = root / relative_path
     text = path.read_text(encoding="utf-8")
-    if text.count(new) == expected_count:
-        return
-    if text.count(old) != expected_count:
+    count = text.count(old)
+    if count != expected_count:
         raise RuntimeError(
-            f"Unexpected pinned SDL source in {relative_path}: {old!r}")
+            f"Expected {expected_count} patch anchors in {relative_path}, found {count}: {old!r}")
     path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
 
 

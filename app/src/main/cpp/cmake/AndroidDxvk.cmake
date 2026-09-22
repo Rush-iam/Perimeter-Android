@@ -153,7 +153,7 @@ endmacro()
 
 # This target is deliberately independent of Perimeter's desktop DXVK builder.
 function(_android_add_dxvk_generation
-        generation sdl_include_dir swappy_target sdl_patch_stamp sdl_patch_target)
+        generation sdl_include_dir swappy_target)
     # Use a new cache namespace for the immutable source transition. Older
     # android_dxvk_source_v1/v2 entries may already contain in-place patches.
     set(android_dxvk_name "dxvk_pristine_v${generation}")
@@ -197,7 +197,9 @@ function(_android_add_dxvk_generation
         set(android_dxvk_is_native_args -Ddxvk_native_force=true -Ddxvk_native_wsi=sdl2)
         set(android_dxvk_frontend_args)
         set(android_dxvk_component_args -Denable_d3d9=true -Denable_tests=false -Denable_dxgi=false -Denable_d3d10=false -Denable_d3d11=false)
-        set(android_dxvk_sdl_lib_args "-Dandroid_sdl2_lib=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+        file(TO_CMAKE_PATH "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}" android_dxvk_library_output_dir)
+        set(android_dxvk_sdl_lib_args
+            "-Dandroid_sdl2_lib=${android_dxvk_library_output_dir}")
         if(NOT swappy_target OR NOT TARGET ${swappy_target})
             message(FATAL_ERROR "Android DXVK v1 requires the Swappy prefab target")
         endif()
@@ -206,9 +208,10 @@ function(_android_add_dxvk_generation
         if(NOT android_dxvk_swappy_include OR NOT android_dxvk_swappy_lib)
             message(FATAL_ERROR "Android DXVK v1 requires the Swappy prefab include and library paths")
         endif()
+        file(TO_CMAKE_PATH "${android_dxvk_swappy_lib}" android_dxvk_swappy_lib_cmake)
         set(android_dxvk_swappy_args
             "-Dandroid_swappy_include=${android_dxvk_swappy_include}"
-            "-Dandroid_swappy_lib=${android_dxvk_swappy_lib}")
+            "-Dandroid_swappy_lib=${android_dxvk_swappy_lib_cmake}")
     endif()
 
     set(android_dxvk_meson_args
@@ -224,6 +227,7 @@ function(_android_add_dxvk_generation
 
     set(dxvk_build "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk-v${generation}")
     file(MAKE_DIRECTORY "${dxvk_build}")
+    file(TO_CMAKE_PATH "${CMAKE_MAKE_PROGRAM}" android_dxvk_ninja)
     # Keep the FetchContent checkout immutable. Patching a persistent source
     # directory makes removing or changing a patch dependent on cache history.
     # The generated staging tree is disposable and is rebuilt whenever the
@@ -316,7 +320,7 @@ function(_android_add_dxvk_generation
     ExternalProject_Add(${android_dxvk_build_target}
         SOURCE_DIR "${android_dxvk_patched_source_dir}"
         BINARY_DIR "${dxvk_build}/build"
-        DEPENDS ${sdl_patch_target} ${android_dxvk_patch_target}
+        DEPENDS ${android_dxvk_patch_target}
         DOWNLOAD_COMMAND ""
         UPDATE_COMMAND ""
         CONFIGURE_COMMAND "${CMAKE_COMMAND}" -P "${android_dxvk_setup_script}"
@@ -336,7 +340,6 @@ function(_android_add_dxvk_generation
             "${android_dxvk_setup_script}"
             "${android_dxvk_patch_script}"
             "${android_dxvk_patch_stamp}"
-            "${sdl_patch_stamp}"
         COMMENT "Checking Android DXVK v${generation} configuration inputs")
 
     add_library(AndroidDxvk::D3D9_v${generation} SHARED IMPORTED GLOBAL)
@@ -368,6 +371,46 @@ function(_android_add_dxvk_generation
         PARENT_SCOPE)
 endfunction()
 
+function(android_prepare_sdl pristine_source_dir)
+    if(NOT IS_DIRECTORY "${pristine_source_dir}")
+        message(FATAL_ERROR "Android SDL source directory does not exist: ${pristine_source_dir}")
+    endif()
+
+    _dxvk_ensure_host_tools()
+
+    # Keep the FetchContent checkout immutable. SDL is configured by CMake,
+    # so stage and patch its disposable source tree before add_subdirectory()
+    # creates the SDL2 targets.
+    set(android_sdl_source_dir
+        "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk/sdl-patched-source")
+    set(android_sdl_patch_script
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_sdl.py")
+    set(android_sdl_patch_script_copy
+        "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk/patch_android_sdl.py")
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk")
+    configure_file("${android_sdl_patch_script}"
+        "${android_sdl_patch_script_copy}" COPYONLY)
+    file(REMOVE_RECURSE "${android_sdl_source_dir}")
+    file(COPY "${pristine_source_dir}/" DESTINATION "${android_sdl_source_dir}")
+
+    execute_process(
+        COMMAND "${ANDROID_DXVK_PYTHON}" "${android_sdl_patch_script_copy}"
+            "${android_sdl_source_dir}"
+        RESULT_VARIABLE android_sdl_patch_result
+        OUTPUT_VARIABLE android_sdl_patch_output
+        ERROR_VARIABLE android_sdl_patch_error)
+    if(NOT android_sdl_patch_result EQUAL 0)
+        message(FATAL_ERROR
+            "Failed to patch Android SDL sources (exit ${android_sdl_patch_result}).\n"
+            "${android_sdl_patch_output}${android_sdl_patch_error}")
+    endif()
+
+    add_subdirectory("${android_sdl_source_dir}"
+        "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk/sdl-build"
+        EXCLUDE_FROM_ALL)
+    set(android_sdl_source_dir "${android_sdl_source_dir}" PARENT_SCOPE)
+endfunction()
+
 function(android_add_dxvk sdl_include_dir swappy_target)
     if(NOT ANDROID OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
         message(FATAL_ERROR "Android DXVK currently supports only Android arm64-v8a")
@@ -376,34 +419,20 @@ function(android_add_dxvk sdl_include_dir swappy_target)
         message(FATAL_ERROR "Android DXVK requires ANDROID_STL=c++_shared")
     endif()
 
+    # Keep Meson's command and its Windows paths in this function scope. SDL
+    # preparation runs in a separate CMake function because it must happen
+    # before SDL's add_subdirectory() configuration.
     _dxvk_ensure_host_tools()
-    set(android_dxvk_sdl_patch_script
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/patch_android_sdl.py")
-    set(android_dxvk_sdl_patch_stamp
-        "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk/sdl-source-patched.stamp")
-    add_custom_command(OUTPUT "${android_dxvk_sdl_patch_stamp}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory
-            "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk"
-        COMMAND "${ANDROID_DXVK_PYTHON}" "${android_dxvk_sdl_patch_script}"
-            "${sdl2_SOURCE_DIR}"
-        COMMAND "${CMAKE_COMMAND}" -E touch "${android_dxvk_sdl_patch_stamp}"
-        DEPENDS "${android_dxvk_sdl_patch_script}"
-        COMMENT "Patching SDL for Android DXVK"
-        VERBATIM)
-    add_custom_target(android_dxvk_patch_sdl
-        DEPENDS "${android_dxvk_sdl_patch_stamp}")
-    if(NOT TARGET SDL2)
-        message(FATAL_ERROR "Android DXVK requires the SDL2 target before patching SDL")
-    endif()
-    add_dependencies(SDL2 android_dxvk_patch_sdl)
 
-    _android_add_dxvk_generation(1 "${sdl_include_dir}" "${swappy_target}"
-        "${android_dxvk_sdl_patch_stamp}" android_dxvk_patch_sdl)
+    if(NOT TARGET SDL2)
+        message(FATAL_ERROR "Android DXVK requires the patched SDL2 target")
+    endif()
+
+    _android_add_dxvk_generation(1 "${sdl_include_dir}" "${swappy_target}")
     set(android_dxvk_v1_headers "${android_dxvk_header_dirs}")
     set(android_dxvk_v1_package "${android_dxvk_package_targets}")
     set(android_dxvk_v1_build "${android_dxvk_build_targets}")
-    _android_add_dxvk_generation(2 "${sdl_include_dir}" "${swappy_target}"
-        "${android_dxvk_sdl_patch_stamp}" android_dxvk_patch_sdl)
+    _android_add_dxvk_generation(2 "${sdl_include_dir}" "${swappy_target}")
     set(android_dxvk_v2_headers "${android_dxvk_header_dirs}")
     set(android_dxvk_v2_package "${android_dxvk_package_targets}")
     set(android_dxvk_v2_build "${android_dxvk_build_targets}")
