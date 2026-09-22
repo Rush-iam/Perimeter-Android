@@ -66,7 +66,8 @@ final class AndroidMemoryMonitor {
             if (activityManager != null) {
                 activityManager.getMemoryInfo(deviceMemory);
             }
-            long graphicsPssKb = readGraphicsPssKb(activityManager);
+            AndroidProcessMemoryStats androidProcessMemory =
+                    readAndroidProcessMemoryStats(activityManager);
 
             if (!reportedSessionMetadata) {
                 Log.i(TAG,
@@ -74,6 +75,7 @@ final class AndroidMemoryMonitor {
                                 + " systemTotalMiB=" + formatMiBFromBytes(deviceMemory.totalMem)
                                 + " systemLowMemoryThresholdMiB="
                                 + formatMiBFromBytes(deviceMemory.threshold)
+                                + " androidProcessMemorySource=ActivityManager.Debug.MemoryInfo"
                                 + " graphicsPssSource=ActivityManager.summary.graphics");
                 reportedSessionMetadata = true;
             }
@@ -84,7 +86,10 @@ final class AndroidMemoryMonitor {
                             + " rssMiB=" + formatMiBFromKb(processMemory.rssKb)
                             + " privateDirtyMiB=" + formatMiBFromKb(processMemory.privateDirtyKb)
                             + " swapPssMiB=" + formatMiBFromKb(processMemory.swapPssKb)
-                            + " graphicsPssMiB=" + formatMiBFromKb(graphicsPssKb)
+                            + " androidSummaryTotalPssMiB="
+                            + formatAndroidSummaryTotalPss(androidProcessMemory, processMemory)
+                            + " graphicsPssMiB="
+                            + formatMiBFromKb(androidProcessMemory.graphicsPssKb)
                             + " nativeHeapAllocatedMiB="
                             + formatMiBFromBytes(Debug.getNativeHeapAllocatedSize())
                             + " nativeHeapFreeMiB=" + formatMiBFromBytes(Debug.getNativeHeapFreeSize())
@@ -98,21 +103,36 @@ final class AndroidMemoryMonitor {
         }
     }
 
-    private static long readGraphicsPssKb(ActivityManager activityManager) {
+    private static AndroidProcessMemoryStats readAndroidProcessMemoryStats(
+            ActivityManager activityManager) {
         if (activityManager == null) {
-            return -1;
+            return AndroidProcessMemoryStats.UNAVAILABLE;
         }
 
         try {
             Debug.MemoryInfo[] processMemory =
                     activityManager.getProcessMemoryInfo(new int[]{Process.myPid()});
             if (processMemory == null || processMemory.length == 0) {
-                return -1;
+                return AndroidProcessMemoryStats.UNAVAILABLE;
             }
 
+            String totalPss = processMemory[0].getMemoryStat("summary.total-pss");
             String graphicsPss = processMemory[0].getMemoryStat("summary.graphics");
-            return graphicsPss != null ? Long.parseLong(graphicsPss) : -1;
+            return new AndroidProcessMemoryStats(
+                    parseMemoryStatKb(totalPss),
+                    parseMemoryStatKb(graphicsPss));
         } catch (RuntimeException exception) {
+            return AndroidProcessMemoryStats.UNAVAILABLE;
+        }
+    }
+
+    private static long parseMemoryStatKb(String value) {
+        if (value == null) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
             return -1;
         }
     }
@@ -196,6 +216,17 @@ final class AndroidMemoryMonitor {
         return valueKb >= 0 ? String.format(Locale.US, "%.1f", valueKb / 1024.0) : "unavailable";
     }
 
+    private static String formatAndroidSummaryTotalPss(
+            AndroidProcessMemoryStats androidProcessMemory, ProcessMemoryStats processMemory) {
+        if ("smaps_rollup".equals(processMemory.source)
+                && androidProcessMemory.totalPssKb >= 0
+                && processMemory.pssKb >= 0
+                && androidProcessMemory.totalPssKb + 16 * 1024 < processMemory.pssKb) {
+            return "unavailable(below_smaps_rollup)";
+        }
+        return formatMiBFromKb(androidProcessMemory.totalPssKb);
+    }
+
     private static String formatMiBFromBytes(long valueBytes) {
         return valueBytes >= 0
                 ? String.format(Locale.US, "%.1f", valueBytes / (1024.0 * 1024.0))
@@ -208,5 +239,18 @@ final class AndroidMemoryMonitor {
         long rssKb = -1;
         long privateDirtyKb = -1;
         long swapPssKb = -1;
+    }
+
+    private static final class AndroidProcessMemoryStats {
+        static final AndroidProcessMemoryStats UNAVAILABLE =
+                new AndroidProcessMemoryStats(-1, -1);
+
+        final long totalPssKb;
+        final long graphicsPssKb;
+
+        AndroidProcessMemoryStats(long totalPssKb, long graphicsPssKb) {
+            this.totalPssKb = totalPssKb;
+            this.graphicsPssKb = graphicsPssKb;
+        }
     }
 }

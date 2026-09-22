@@ -134,11 +134,182 @@ def patch_v1():
     """Patch the legacy DXVK 1.x fork used by the native compatibility path."""
     rename_d3d9_library(1)
     patch_v1_presenter_and_pacing()
+    patch_v1_allocator_diagnostics()
     patch_v1_timing_instrumentation()
     patch_v1_mobile_compatibility()
     patch_v1_android_build_integration()
 
 
+def patch_v1_allocator_diagnostics():
+    """Log Android DXVK 1 heap, memory-type, and empty-chunk usage."""
+    replace("src/dxvk/dxvk_memory.h", "#pragma once\n\n#include \"dxvk_adapter.h\"",
+            "#pragma once\n\n#include <chrono>\n\n#include \"dxvk_adapter.h\"")
+    replace("src/dxvk/dxvk_memory.h",
+            "    VkDeviceSize      chunkSize;\n\n    std::vector<Rc<DxvkMemoryChunk>> chunks;",
+            """    VkDeviceSize      chunkSize;
+
+#if defined(__ANDROID__)
+    VkDeviceSize      memoryAllocated = 0;
+    VkDeviceSize      memoryUsed      = 0;
+#endif
+
+    std::vector<Rc<DxvkMemoryChunk>> chunks;""")
+    replace("src/dxvk/dxvk_memory.h",
+            "  private:\n    \n    struct FreeSlice {",
+            "  private:\n    friend class DxvkMemoryAllocator;\n\n    struct FreeSlice {")
+    replace("src/dxvk/dxvk_memory.h",
+            "    DxvkMemory alloc(\n      const VkMemoryRequirements*             req,\n      const VkMemoryDedicatedRequirements&    dedAllocReq,\n      const VkMemoryDedicatedAllocateInfo&    dedAllocInfo,\n            VkMemoryPropertyFlags             flags,\n            float                             priority);",
+            """    DxvkMemory alloc(
+      const VkMemoryRequirements*             req,
+      const VkMemoryDedicatedRequirements&    dedAllocReq,
+      const VkMemoryDedicatedAllocateInfo&    dedAllocInfo,
+            VkMemoryPropertyFlags             flags,
+            float                             priority);
+
+#if defined(__ANDROID__)
+    void logAndroidMemoryStats();
+#endif""")
+    replace("src/dxvk/dxvk_memory.h",
+            "    dxvk::mutex                                     m_mutex;\n    std::array<DxvkMemoryHeap, VK_MAX_MEMORY_HEAPS> m_memHeaps;",
+            """    dxvk::mutex                                     m_mutex;
+#if defined(__ANDROID__)
+    std::chrono::steady_clock::time_point           m_nextAndroidMemoryLog = { };
+#endif
+    std::array<DxvkMemoryHeap, VK_MAX_MEMORY_HEAPS> m_memHeaps;""")
+
+    replace("src/dxvk/dxvk_memory.cpp",
+            '#include "dxvk_device.h"\n#include "dxvk_memory.h"',
+            '#include <string>\n\n#include "dxvk_device.h"\n#include "dxvk_memory.h"')
+    replace("src/dxvk/dxvk_memory.cpp",
+            "      m_memTypes[i].chunkSize  = pickChunkSize(i);",
+            """      m_memTypes[i].chunkSize  = pickChunkSize(i);
+#if defined(__ANDROID__)
+      m_memTypes[i].memoryAllocated = 0;
+      m_memTypes[i].memoryUsed      = 0;
+#endif""")
+    replace("src/dxvk/dxvk_memory.cpp",
+            "    if (memory)\n      type->heap->stats.memoryUsed += memory.m_length;",
+            """    if (memory) {
+      type->heap->stats.memoryUsed += memory.m_length;
+#if defined(__ANDROID__)
+      type->memoryUsed += memory.m_length;
+#endif
+    }""")
+    replace("src/dxvk/dxvk_memory.cpp",
+            "    type->heap->stats.memoryAllocated += size;\n    m_device->adapter()->notifyHeapMemoryAlloc(type->heapId, size);",
+            """    type->heap->stats.memoryAllocated += size;
+#if defined(__ANDROID__)
+    type->memoryAllocated += size;
+#endif
+    m_device->adapter()->notifyHeapMemoryAlloc(type->heapId, size);""")
+    replace("src/dxvk/dxvk_memory.cpp",
+            "    memory.m_type->heap->stats.memoryUsed -= memory.m_length;",
+            """    memory.m_type->heap->stats.memoryUsed -= memory.m_length;
+#if defined(__ANDROID__)
+    memory.m_type->memoryUsed -= memory.m_length;
+#endif""")
+    replace("src/dxvk/dxvk_memory.cpp",
+            "    type->heap->stats.memoryAllocated -= memory.memSize;\n    m_device->adapter()->notifyHeapMemoryFree(type->heapId, memory.memSize);",
+            """    type->heap->stats.memoryAllocated -= memory.memSize;
+#if defined(__ANDROID__)
+    type->memoryAllocated -= memory.memSize;
+#endif
+    m_device->adapter()->notifyHeapMemoryFree(type->heapId, memory.memSize);""")
+    replace("src/dxvk/dxvk_memory.cpp",
+            "  VkDeviceSize DxvkMemoryAllocator::pickChunkSize(uint32_t memTypeId) const {",
+            r'''#if defined(__ANDROID__)
+  void DxvkMemoryAllocator::logAndroidMemoryStats() {
+    const auto now = std::chrono::steady_clock::now();
+    if (m_nextAndroidMemoryLog != std::chrono::steady_clock::time_point()
+     && now < m_nextAndroidMemoryLog)
+      return;
+
+    m_nextAndroidMemoryLog = now + std::chrono::seconds(10);
+    std::lock_guard<dxvk::mutex> lock(m_mutex);
+
+    const bool hasDriverBudget = m_device->extensions().extMemoryBudget;
+    DxvkAdapterMemoryInfo driverInfo = { };
+    if (hasDriverBudget)
+      driverInfo = m_device->adapter()->getMemoryHeapInfo();
+
+    for (uint32_t heapId = 0; heapId < m_memProps.memoryHeapCount; heapId++) {
+      const DxvkMemoryHeap& heap = m_memHeaps[heapId];
+      std::string driverAllocated = "unavailable";
+      std::string driverBudget = "unavailable";
+      if (hasDriverBudget && heapId < driverInfo.heapCount) {
+        driverAllocated = str::format(driverInfo.heaps[heapId].memoryAllocated);
+        driverBudget = str::format(driverInfo.heaps[heapId].memoryBudget);
+      }
+
+      Logger::info(str::format(
+        "Android DXVK memory heap=", heapId,
+        " allocatedBytes=", heap.stats.memoryAllocated,
+        " usedBytes=", heap.stats.memoryUsed,
+        " allocatorBudgetBytes=", heap.budget,
+        " driverAllocatedBytes=", driverAllocated,
+        " driverBudgetBytes=", driverBudget,
+        " heapSizeBytes=", heap.properties.size));
+    }
+
+    for (uint32_t typeId = 0; typeId < m_memProps.memoryTypeCount; typeId++) {
+      const DxvkMemoryType& type = m_memTypes[typeId];
+      if (!type.memoryAllocated && !type.memoryUsed && type.chunks.empty())
+        continue;
+
+      uint32_t emptyChunkCount = 0;
+      VkDeviceSize emptyChunkBytes = 0;
+      uint32_t chunkId = 0;
+      for (const auto& chunk : type.chunks) {
+        VkDeviceSize freeBytes = 0;
+        for (const auto& slice : chunk->m_freeList)
+          freeBytes += slice.length;
+
+        if (freeBytes == chunk->m_memory.memSize) {
+          emptyChunkCount += 1;
+          emptyChunkBytes += chunk->m_memory.memSize;
+        }
+
+        Logger::info(str::format(
+          "Android DXVK memory heap=", type.heapId,
+          " type=", typeId,
+          " chunk=", chunkId++,
+          " sizeBytes=", chunk->m_memory.memSize,
+          " usedBytes=", chunk->m_memory.memSize - freeBytes,
+          " freeBytes=", freeBytes,
+          " freeSlices=", chunk->m_freeList.size(),
+          " priority=", chunk->m_memory.priority));
+      }
+
+      const VkDeviceSize cachedFreeBytes = type.memoryAllocated > type.memoryUsed
+        ? type.memoryAllocated - type.memoryUsed : 0;
+      const std::string memoryFlags = str::format("0x", std::hex,
+        type.memType.propertyFlags);
+
+      Logger::info(str::format(
+        "Android DXVK memory heap=", type.heapId,
+        " type=", typeId,
+        " flags=", memoryFlags,
+        " allocatedBytes=", type.memoryAllocated,
+        " usedBytes=", type.memoryUsed,
+        " cachedFreeBytes=", cachedFreeBytes,
+        " chunks=", type.chunks.size(),
+        " emptyChunks=", emptyChunkCount,
+        " emptyChunkBytes=", emptyChunkBytes));
+    }
+  }
+#endif
+
+
+  VkDeviceSize DxvkMemoryAllocator::pickChunkSize(uint32_t memTypeId) const {''')
+
+    replace("src/dxvk/dxvk_queue.cpp",
+            "      if (entry.status)\n        entry.status->result = status;",
+            """#if defined(__ANDROID__)
+      m_device->m_objects.memoryManager().logAndroidMemoryStats();
+#endif
+
+      if (entry.status)
+        entry.status->result = status;""")
 def patch_v1_presenter_and_pacing():
     """Patch Android surface recovery, Swappy, and presenter timing."""
     replace("src/vulkan/vulkan_presenter.h",
