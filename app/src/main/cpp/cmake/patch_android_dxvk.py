@@ -180,7 +180,7 @@ def patch_v1_allocator_diagnostics():
 
     replace("src/dxvk/dxvk_memory.cpp",
             '#include "dxvk_device.h"\n#include "dxvk_memory.h"',
-            '#include <string>\n\n#include "dxvk_device.h"\n#include "dxvk_memory.h"')
+            '#include <cstdlib>\n#include <string>\n\n#include "dxvk_device.h"\n#include "dxvk_memory.h"')
     replace("src/dxvk/dxvk_memory.cpp",
             "      m_memTypes[i].chunkSize  = pickChunkSize(i);",
             """      m_memTypes[i].chunkSize  = pickChunkSize(i);
@@ -220,6 +220,10 @@ def patch_v1_allocator_diagnostics():
             "  VkDeviceSize DxvkMemoryAllocator::pickChunkSize(uint32_t memTypeId) const {",
             r'''#if defined(__ANDROID__)
   void DxvkMemoryAllocator::logAndroidMemoryStats() {
+    const char* memoryLogging = std::getenv("PERIMETER_ANDROID_MEMORY_LOG");
+    if (!memoryLogging || memoryLogging[0] != '1' || memoryLogging[1] != '\0')
+      return;
+
     const auto now = std::chrono::steady_clock::now();
     if (m_nextAndroidMemoryLog != std::chrono::steady_clock::time_point()
      && now < m_nextAndroidMemoryLog)

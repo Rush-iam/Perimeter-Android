@@ -105,8 +105,7 @@ class MainActivity : SDLActivity() {
         val limitToHalfRefresh = FrameRateLimit.load(this)
         val arguments = GameLaunchOptions(this).arguments(path).filterNot {
             val key = it.removePrefix("tmp_").substringBefore('=')
-            key == "android_vsync_interval" || key == "VSync" ||
-                key == GameLaunchOptions.MEMORY_MONITOR_KEY
+            key == "android_vsync_interval" || key == "VSync"
         }
         return (arguments + listOfNotNull(
             "android_vsync_interval=2".takeIf { limitToHalfRefresh },

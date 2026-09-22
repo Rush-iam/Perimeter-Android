@@ -356,7 +356,7 @@ internal class GameLaunchOptionsEditor(
             Option("Diagnostics", "console", "Redirect logs to Logcat instead of file", Kind.FLAG,
                 "The log file is not created when enabled."),
             Option("Diagnostics", GameLaunchOptions.MEMORY_MONITOR_KEY, "Log Android memory usage", Kind.TOGGLE,
-                "Writes process and device memory readings to Logcat every 10 seconds while the game is visible."),
+                "Writes process, device, and DXVK memory readings to Logcat."),
             Option("Diagnostics", "frame_timing", "Record frame timing", Kind.TOGGLE,
                 "Writes renderer-independent frame and presentation timestamps for benchmark captures."),
             Option("Diagnostics", "dxvk_max_frame_latency", "DXVK maximum frame latency", Kind.CHOICE,

@@ -4,6 +4,7 @@
 
 #include <android/log.h>
 #include <cstdarg>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <mutex>
 #include <string>
@@ -27,7 +28,15 @@ void logError(const char* format, ...) {
     va_end(args);
 }
 
+void configureAndroidMemoryLogging() {
+    const char* requested = check_command_line("android_memory_monitor");
+    const bool enabled = requested && requested[0] == '1' && requested[1] == '\0';
+    setenv("PERIMETER_ANDROID_MEMORY_LOG", enabled ? "1" : "0", 1);
+}
+
 void loadSelectedDxvk() {
+    configureAndroidMemoryLogging();
+
     const char* requestedVersion = check_command_line("android_dxvk_version");
     const bool validVersion = requestedVersion && requestedVersion[1] == '\0' &&
             (requestedVersion[0] == '1' || requestedVersion[0] == '2');
