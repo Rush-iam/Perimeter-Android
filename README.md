@@ -18,12 +18,12 @@ Please report problems through [GitHub Issues](../../issues).
 
 ## Requirements
 
-- Android 10+ (64-bit ARM)
+- Android 10 or newer (64-bit ARM)
 - 6+ GB RAM recommended; larger missions may crash on 4 GB devices
+- 5 GB of storage
 - A copy of the Perimeter game (only the
 [Legate Edition](https://store.steampowered.com/app/2530170/PERIMETER_Legate_Edition/)
 has been tested)
-- 5 GB of storage
 
 ## Installation
 
