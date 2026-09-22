@@ -36,6 +36,75 @@ The tile and LOD constants are defined in
 `Perimeter/Source/Render/tilemap/TileMap.h` and
 `Perimeter/Source/Render/tilemap/TileMapBumpTile.h`.
 
+### Distance thresholds and projected size
+
+The terrain thresholds are scaled by the camera's horizontal focal length in
+pixels, rather than being fixed world distances. Let `F` be
+`GetFocusViewPort().x` and `M` be `Option_MapLevel`. The camera computes `F` as
+the normalized focal length multiplied by the active render width. The LOD
+thresholds are `{0.5, 1.5, 3, 6, 12} * M * F`, and a tile's 3D center distance
+selects its LOD. With five LODs, only the first four values are transition
+boundaries: LOD 4 is selected at or beyond `6 * M * F`; the `12 * M * F` entry
+does not affect selection.
+
+Each tile is 64 map units wide, and the LOD sample steps are 2, 4, 8, 16, and
+32 units. Ignoring tile scale and view-angle foreshortening, its projected
+width is approximately `64 * F / distance`. Therefore, the transition into
+LOD 4 occurs when a tile is about `64 / (6 * M)` pixels wide. The current
+landscape presets pass map-level values 50, 100, 200, and 300; the conversion
+in `cVisGeneric::SetMapLevel` maps those to `M = 0.45, 0.8, 1.5, 2.2`. That
+makes the final transition occur at roughly:
+
+These are approximate **render-pixel** widths, not measurements for one fixed
+resolution. At the same field of view, the render-width factor in `F` cancels
+at the transition, so these pixel widths apply at 1280x800 and at other render
+resolutions. The world-space distance of each transition still scales with
+render width.
+
+| Landscape detail | Map-level multiplier `M` | Tile width at LOD 4 transition (render px) |
+|---|---:|---:|
+| Low | 0.45 | 23.7 px |
+| Medium | 0.8 | 13.3 px |
+| High | 1.5 | 7.1 px |
+| Extreme | 2.2 | 4.8 px |
+
+This means higher detail settings intentionally delay coarsening until each
+tile occupies fewer pixels. At High and Extreme, the final LOD change happens
+when the tile is already small on screen, which can feel late if the goal is
+to reduce terrain work sooner. The thresholds do account for render width in
+an approximate screen-space way, but they do not measure each tile's actual
+projected bounds or terrain error. They use a center distance and the same
+global threshold for every tile, so terrain shape, camera angle, and
+tile-specific scale are not reflected in the decision.
+
+Changing render resolution changes the world-space transition distances: at
+the same field of view, doubling the render width doubles `F` and moves each
+transition twice as far from the camera. The projected tile width at a
+transition stays approximately the same because `F` cancels from
+`64 * F / (k * M * F)`. Thus a higher-resolution render does not by itself
+make the renderer wait for a smaller tile in pixels; it moves the boundary in
+world space to preserve a similar pixel footprint. This uses the active
+render target width, not necessarily the device display's native width.
+For the main game camera, the render target is normally null, so the camera
+uses `RenderDevice->GetSizeX()`. That returns the renderer's `ScreenSize.x`,
+initialized from `terScreenSizeX` after SDL window setup. In practice, this is
+the width SDL and the renderer use for the game window/surface; it is not a
+hardcoded 800-pixel value or an Android density-independent-pixel width, and
+it is not guaranteed to match the panel's native resolution. A camera that
+renders into a texture instead uses that texture's width. The startup log's
+`Resolution: WxH` reports the render resolution; for a log showing
+`Resolution: 1280x800`, terrain LOD uses a render width of 1280, so
+`F = GetFocusX() * 1280`. The `Game UI` and `Menu UI` dimensions in that log
+are separate UI coordinate spaces and do not replace the render width in the
+LOD calculation.
+
+For a more content-aware policy, select each tile's coarsest LOD whose maximum
+projected geometric error stays below a target pixel error. The error can be
+estimated by projecting deviations between the detailed heightfield and each
+candidate LOD mesh. A simpler approximation can use projected tile bounds and
+projected sample spacing. Either approach should retain a small hysteresis
+band to prevent repeated switching near a threshold.
+
 For each terrain pre-draw, the renderer:
 
 1. Clips the camera volume and rasterizes it into a tile visibility map.
