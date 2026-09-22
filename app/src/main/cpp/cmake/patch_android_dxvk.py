@@ -135,6 +135,7 @@ def patch_v1():
     rename_d3d9_library(1)
     patch_v1_presenter_and_pacing()
     patch_v1_allocator_diagnostics()
+    patch_v1_allocator_policy()
     patch_v1_timing_instrumentation()
     patch_v1_mobile_compatibility()
     patch_v1_android_build_integration()
@@ -310,6 +311,23 @@ def patch_v1_allocator_diagnostics():
 
       if (entry.status)
         entry.status->result = status;""")
+
+
+def patch_v1_allocator_policy():
+    """Use 64 MiB backing chunks for Android DXVK 1 allocations."""
+    replace("src/dxvk/dxvk_memory.cpp",
+            "    return chunkSize;",
+            """#if defined(__ANDROID__)
+    // Keep Android DXVK 1 backing chunks at 64 MiB. This reduces retained
+    // graphics memory and internal fragmentation compared with the upstream
+    // 128 MiB default while avoiding the excessive chunk count seen at 32 MiB.
+    constexpr VkDeviceSize androidMaxChunkSize = 64ull << 20;
+    if (chunkSize > androidMaxChunkSize)
+      chunkSize = androidMaxChunkSize;
+#endif
+    return chunkSize;""")
+
+
 def patch_v1_presenter_and_pacing():
     """Patch Android surface recovery, Swappy, and presenter timing."""
     replace("src/vulkan/vulkan_presenter.h",
