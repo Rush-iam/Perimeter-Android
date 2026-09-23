@@ -49,6 +49,7 @@ has been tested)
 - Single-finger hold: right mouse button
 - Two-finger tap: right mouse button
 - Two-finger drag: move the camera
+- Two-finger hold, then drag: rotate the camera
 - Pinch: zoom in or out
 
 ## Graphics renderer

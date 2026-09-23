@@ -33,6 +33,8 @@ import android.view.WindowManager;
 public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     View.OnKeyListener, View.OnTouchListener, SensorEventListener  {
 
+    private static final int SDL_BUTTON_MIDDLE = 2;
+
     // Sensors
     protected SensorManager mSensorManager;
     protected Display mDisplay;
@@ -60,7 +62,15 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private float mTwoFingerLastSpan;
     private float mTwoFingerLastMidpointY;
     private static final long TWO_FINGER_DRAG_GRACE_PERIOD_MS = 100L;
+    private static final long TWO_FINGER_ROTATION_DELAY_MS = 500L;
+    private static final float ROTATION_PERCENT_SCALE = 100.0f;
+    private static final float TWO_FINGER_ROTATION_SENSITIVITY = 5.0f;
     private boolean mTwoFingerDragActive;
+    private boolean mTwoFingerRotationActive;
+    private float mTwoFingerRotationLastX;
+    private float mTwoFingerRotationLastY;
+    private float mTwoFingerRotationCurrentX;
+    private float mTwoFingerRotationCurrentY;
     private boolean mPendingSingleTouch;
     private boolean mSuppressTouchSequence;
     private int mPendingTouchDeviceId;
@@ -77,6 +87,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private static final long SINGLE_FINGER_RIGHT_CLICK_DURATION_MS = 250L;
     private final Handler mTouchHandler = new Handler(Looper.getMainLooper());
     private Runnable mPendingSingleTouchRightClick;
+    private Runnable mTwoFingerRotationActivation;
 
     // Startup
     public SDLSurface(Context context) {
@@ -108,6 +119,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
     public void handlePause() {
         cancelPendingSingleTouchRightClick();
+        cancelPendingTwoFingerRotation();
+        endTwoFingerRotation();
+        mTwoFingerTapCandidate = false;
         mPendingSingleTouch = false;
         mSuppressTouchSequence = false;
         enableSensor(Sensor.TYPE_ACCELEROMETER, false);
@@ -393,7 +407,20 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 mTwoFingerTapStartTime = event.getEventTime();
                 mTwoFingerLastSpan = twoFingerSpan(event, 0, 1);
                 mTwoFingerLastMidpointY = (event.getY(0) + event.getY(1)) * 0.5f;
+                mTwoFingerRotationCurrentX = (event.getX(0) + event.getX(1)) * 0.5f;
+                mTwoFingerRotationCurrentY = mTwoFingerLastMidpointY;
+                mTwoFingerRotationActivation = () -> {
+                    mTwoFingerRotationActivation = null;
+                    if (mTwoFingerTapCandidate && !mTwoFingerRotationActive) {
+                        mTwoFingerTapCandidate = false;
+                        beginTwoFingerRotation(mTwoFingerRotationCurrentX,
+                                               mTwoFingerRotationCurrentY);
+                    }
+                };
+                mTouchHandler.postDelayed(mTwoFingerRotationActivation,
+                                          TWO_FINGER_ROTATION_DELAY_MS);
             } else {
+                cancelPendingTwoFingerRotation();
                 mTwoFingerTapCandidate = false;
                 resetTwoFingerZoom();
             }
@@ -401,6 +428,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
 
         if (!mTwoFingerTapCandidate) {
+            if (mTwoFingerRotationActive && action == MotionEvent.ACTION_MOVE) {
+                moveTwoFingerRotation(event);
+            }
+            if (mTwoFingerRotationActive &&
+                (action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP ||
+                 action == MotionEvent.ACTION_CANCEL)) {
+                endTwoFingerRotation();
+            }
             if (mTwoFingerDragActive && action == MotionEvent.ACTION_MOVE) {
                 moveTwoFingerDrag(event);
             }
@@ -419,9 +454,18 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         if (action == MotionEvent.ACTION_MOVE) {
             int firstIndex = event.findPointerIndex(mTwoFingerTapFirstPointerId);
             int secondIndex = event.findPointerIndex(mTwoFingerTapSecondPointerId);
-            if (firstIndex < 0 || secondIndex < 0 ||
-                movedBeyondTapSlop(event, firstIndex, mTwoFingerTapFirstX, mTwoFingerTapFirstY) ||
+            if (firstIndex < 0 || secondIndex < 0) {
+                cancelPendingTwoFingerRotation();
+                mTwoFingerTapCandidate = false;
+                return false;
+            }
+            mTwoFingerRotationCurrentX =
+                    (event.getX(firstIndex) + event.getX(secondIndex)) * 0.5f;
+            mTwoFingerRotationCurrentY =
+                    (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
+            if (movedBeyondTapSlop(event, firstIndex, mTwoFingerTapFirstX, mTwoFingerTapFirstY) ||
                 movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY)) {
+                cancelPendingTwoFingerRotation();
                 mTwoFingerTapCandidate = false;
                 beginTwoFingerDrag(event, firstIndex, secondIndex);
                 updateTwoFingerGesture(event, firstIndex, secondIndex);
@@ -437,6 +481,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                             !movedBeyondTapSlop(event, firstIndex, mTwoFingerTapFirstX, mTwoFingerTapFirstY) &&
                             !movedBeyondTapSlop(event, secondIndex, mTwoFingerTapSecondX, mTwoFingerTapSecondY);
             mTwoFingerTapCandidate = false;
+            cancelPendingTwoFingerRotation();
             resetTwoFingerZoom();
             return isTap;
         }
@@ -444,6 +489,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL ||
             action == MotionEvent.ACTION_POINTER_UP) {
             mTwoFingerTapCandidate = false;
+            cancelPendingTwoFingerRotation();
             resetTwoFingerZoom();
         }
         return false;
@@ -490,6 +536,49 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mTwoFingerDragActive = false;
     }
 
+    private void beginTwoFingerRotation(float x, float y) {
+        if (mTwoFingerRotationActive) {
+            return;
+        }
+        mTwoFingerRotationLastX = x;
+        mTwoFingerRotationLastY = y;
+        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE,
+                                  x, y, false);
+        SDLActivity.onNativeMouseButton(SDL_BUTTON_MIDDLE, true,
+                                        x, y);
+        mTwoFingerRotationActive = true;
+    }
+
+    private void moveTwoFingerRotation(MotionEvent event) {
+        int firstIndex = event.findPointerIndex(mTwoFingerTapFirstPointerId);
+        int secondIndex = event.findPointerIndex(mTwoFingerTapSecondPointerId);
+        if (firstIndex < 0 || secondIndex < 0) {
+            endTwoFingerRotation();
+            return;
+        }
+        float x = (event.getX(firstIndex) + event.getX(secondIndex)) * 0.5f;
+        float y = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
+        float deltaX = x - mTwoFingerRotationLastX;
+        float deltaY = y - mTwoFingerRotationLastY;
+        if (deltaX != 0.0f || deltaY != 0.0f) {
+            float rotationScale = ROTATION_PERCENT_SCALE * TWO_FINGER_ROTATION_SENSITIVITY /
+                                  Math.max(mWidth, 1.0f);
+            SDLActivity.onNativeCameraRotation(deltaX * rotationScale,
+                                               deltaY * rotationScale);
+        }
+        mTwoFingerRotationLastX = x;
+        mTwoFingerRotationLastY = y;
+    }
+
+    private void endTwoFingerRotation() {
+        if (!mTwoFingerRotationActive) {
+            return;
+        }
+        SDLActivity.onNativeMouseButton(SDL_BUTTON_MIDDLE, false,
+                                        mTwoFingerRotationLastX, mTwoFingerRotationLastY);
+        mTwoFingerRotationActive = false;
+    }
+
     private void updateTwoFingerGesture(MotionEvent event, int firstIndex, int secondIndex) {
         float midpointY = (event.getY(firstIndex) + event.getY(secondIndex)) * 0.5f;
         float verticalDelta = midpointY - mTwoFingerLastMidpointY;
@@ -527,6 +616,13 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         if (mPendingSingleTouchRightClick != null) {
             mTouchHandler.removeCallbacks(mPendingSingleTouchRightClick);
             mPendingSingleTouchRightClick = null;
+        }
+    }
+
+    private void cancelPendingTwoFingerRotation() {
+        if (mTwoFingerRotationActivation != null) {
+            mTouchHandler.removeCallbacks(mTwoFingerRotationActivation);
+            mTwoFingerRotationActivation = null;
         }
     }
 
