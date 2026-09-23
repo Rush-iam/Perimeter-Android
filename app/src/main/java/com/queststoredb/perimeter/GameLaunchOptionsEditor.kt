@@ -344,7 +344,7 @@ internal class GameLaunchOptionsEditor(
             Option("", "locale", "Language", Kind.CHOICE, choices = listOf(
                 "English" to "English", "Russian" to "Russian"), defaultChoiceLabel = "Last used"),
             Option("", "start_splash", "Skip intro movies", Kind.INVERTED_BOOLEAN),
-            Option("", "android_disable_edge_scrolling", "Disable edge scrolling", Kind.TOGGLE,
+            Option("", "disable_edge_scrolling", "Disable edge scrolling", Kind.TOGGLE,
                 "Uncheck for mouse play to enable edge scrolling.", defaultChecked = true),
             Option("", "show_lifebars", "Show health bars by default", Kind.TOGGLE,
                 defaultChecked = true),
