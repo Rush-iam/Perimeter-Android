@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+val xrProbe = providers.gradleProperty("dxvkSmokeXr").map(String::toBoolean).getOrElse(false)
+
 android {
     namespace = "com.queststoredb.perimeter.dxvksmoke"
     compileSdk = 37
@@ -16,6 +18,7 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
+                if (xrProbe) arguments += "-DANDROID_DXVK_XR=ON"
                 providers.gradleProperty("dxvkPython").orNull?.takeIf { it.isNotBlank() }?.let {
                     arguments += "-DANDROID_DXVK_PYTHON=${rootProject.file(it).invariantSeparatorsPath}"
                 }
@@ -51,4 +54,5 @@ android {
 
 dependencies {
     implementation(libs.androidx.games.frame.pacing)
+    if (xrProbe) implementation(libs.openxr.loader.android)
 }

@@ -14,7 +14,7 @@ root = pathlib.Path(sys.argv[1])
 variant = sys.argv[2]
 if not root.is_dir():
     raise SystemExit(f"DXVK source directory does not exist: {root}")
-if variant not in ("native", "v2"):
+if variant not in ("native", "v2", "v2-xr"):
     raise SystemExit(f"Unknown DXVK variant: {variant!r}")
 
 
@@ -128,6 +128,122 @@ def patch_v2():
 #endif
               || pPresentationParameters->PresentationInterval == D3DPRESENT_INTERVAL_IMMEDIATE)))
       return D3DERR_INVALIDCALL;""")
+
+
+def patch_v2_xr():
+    """Expose the Vulkan creation calls needed by OpenXR in the Quest probe."""
+    replace("src/d3d9/d3d9.sym",
+            "    Direct3DCreate9;",
+            "    Direct3DCreate9;\n    dxvkSetAndroidXrHooks;\n    dxvkResetAndroidXrHooks;")
+    write_new("include/native/directx/dxvk_android_xr.h", r'''#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <vulkan/vulkan.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define DXVK_ANDROID_XR_HOOKS_VERSION 1
+
+typedef struct DxvkAndroidXrHooks {
+  uint32_t version;
+  uint32_t size;
+  void* userData;
+  VkResult (*createInstance)(void*, const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance*);
+  VkResult (*selectPhysicalDevice)(void*, VkInstance, VkPhysicalDevice*);
+  VkResult (*createDevice)(void*, VkPhysicalDevice, const VkDeviceCreateInfo*, const VkAllocationCallbacks*, VkDevice*);
+} DxvkAndroidXrHooks;
+
+// Call once before Direct3DCreate9. Keep userData alive until DXVK is destroyed.
+bool dxvkSetAndroidXrHooks(const DxvkAndroidXrHooks* hooks);
+// Call only after all D3D9 objects and in-flight Vulkan work have been released.
+void dxvkResetAndroidXrHooks(void);
+
+#ifdef __cplusplus
+}
+#endif
+''')
+    write_new("src/dxvk/dxvk_android_xr.h", r'''#pragma once
+
+#include "../../include/native/directx/dxvk_android_xr.h"
+
+namespace dxvk {
+  extern DxvkAndroidXrHooks g_androidXrHooks;
+  extern bool g_androidXrStarted;
+}
+''')
+    replace("src/d3d9/d3d9_main.cpp",
+            '#include "../dxvk/dxvk_instance.h"',
+            '#include "../dxvk/dxvk_instance.h"\n#include "../dxvk/dxvk_android_xr.h"')
+    replace("src/d3d9/d3d9_main.cpp",
+            'namespace dxvk {\n  Logger Logger::s_instance("d3d9.log");',
+            '''namespace dxvk {
+  DxvkAndroidXrHooks g_androidXrHooks = { };
+  bool g_androidXrStarted = false;
+  Logger Logger::s_instance("d3d9.log");''')
+    replace("src/d3d9/d3d9_main.cpp",
+            'extern "C" {\n\n  DLLEXPORT IDirect3D9* __stdcall Direct3DCreate9',
+            '''extern "C" {
+
+  DLLEXPORT bool dxvkSetAndroidXrHooks(const DxvkAndroidXrHooks* hooks) {
+    if (dxvk::g_androidXrStarted || !hooks
+     || hooks->version != DXVK_ANDROID_XR_HOOKS_VERSION
+     || hooks->size != sizeof(DxvkAndroidXrHooks)
+     || !hooks->createInstance || !hooks->selectPhysicalDevice || !hooks->createDevice)
+      return false;
+    dxvk::g_androidXrHooks = *hooks;
+    return true;
+  }
+
+  DLLEXPORT void dxvkResetAndroidXrHooks(void) {
+    dxvk::g_androidXrHooks = { };
+    dxvk::g_androidXrStarted = false;
+  }
+
+  DLLEXPORT IDirect3D9* __stdcall Direct3DCreate9''')
+    replace("src/d3d9/d3d9_main.cpp",
+            '''  DLLEXPORT IDirect3D9* __stdcall Direct3DCreate9(UINT nSDKVersion) {
+    IDirect3D9Ex* pDirect3D = nullptr;''',
+            '''  DLLEXPORT IDirect3D9* __stdcall Direct3DCreate9(UINT nSDKVersion) {
+    dxvk::g_androidXrStarted = true;
+    IDirect3D9Ex* pDirect3D = nullptr;''')
+    replace("src/dxvk/dxvk_instance.cpp",
+            '#include "dxvk_instance.h"',
+            '#include "dxvk_instance.h"\n#include "dxvk_android_xr.h"')
+    replace("src/dxvk/dxvk_instance.cpp",
+            'VkResult status = m_vkl->vkCreateInstance(&info, nullptr, &instance);',
+            '''VkResult status = g_androidXrHooks.createInstance
+        ? g_androidXrHooks.createInstance(g_androidXrHooks.userData, &info, nullptr, &instance)
+        : VK_ERROR_INITIALIZATION_FAILED;''')
+    replace("src/dxvk/dxvk_instance.cpp",
+            '''  bool DxvkInstance::initAdapters() {
+    uint32_t numAdapters = 0;''',
+            '''  bool DxvkInstance::initAdapters() {
+    VkPhysicalDevice xrDevice = VK_NULL_HANDLE;
+    if (!g_androidXrHooks.selectPhysicalDevice
+     || g_androidXrHooks.selectPhysicalDevice(g_androidXrHooks.userData,
+          m_vki->instance(), &xrDevice) != VK_SUCCESS || !xrDevice)
+      throw DxvkError("OpenXR did not select a Vulkan physical device");
+
+    uint32_t numAdapters = 0;''')
+    replace("src/dxvk/dxvk_instance.cpp",
+            '''    for (uint32_t i = 0; i < numAdapters; i++) {
+      Rc<DxvkAdapter> adapter = new DxvkAdapter(*this, adapters[i]);''',
+            '''    for (uint32_t i = 0; i < numAdapters; i++) {
+      if (adapters[i] != xrDevice)
+        continue;
+      Rc<DxvkAdapter> adapter = new DxvkAdapter(*this, adapters[i]);''')
+    replace("src/dxvk/dxvk_adapter.cpp",
+            '#include "dxvk_adapter.h"',
+            '#include "dxvk_adapter.h"\n#include "dxvk_android_xr.h"')
+    replace("src/dxvk/dxvk_adapter.cpp",
+            'VkResult vr = vk->vkCreateDevice(m_handle, &deviceInfo, nullptr, &device);',
+            '''VkResult vr = g_androidXrHooks.createDevice
+      ? g_androidXrHooks.createDevice(g_androidXrHooks.userData,
+          m_handle, &deviceInfo, nullptr, &device)
+      : VK_ERROR_INITIALIZATION_FAILED;''')
 
 
 def patch_v1():
@@ -1157,5 +1273,8 @@ LUID GetAdapterLUID(UINT) {
     replace("meson_options.txt", "option('enable_tests',", "option('android_sdl2_include', type: 'string', value: '')\noption('android_sdl2_lib', type: 'string', value: '')\noption('android_swappy_include', type: 'string', value: '')\noption('android_swappy_lib', type: 'string', value: '')\noption('enable_tests',")
 if variant == "v2":
     patch_v2()
+elif variant == "v2-xr":
+    patch_v2()
+    patch_v2_xr()
 elif variant == "native":
     patch_v1()

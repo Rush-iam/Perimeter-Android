@@ -19,3 +19,10 @@ android_add_dxvk("${sdl2_SOURCE_DIR}/include" games-frame-pacing::swappy_static)
 add_library(dxvk_smoke SHARED DxvkSmoke.cpp
     "${CMAKE_CURRENT_LIST_DIR}/../../../../app/src/main/cpp/AndroidLog.cpp")
 target_link_libraries(dxvk_smoke PRIVATE AndroidDxvk::D3D9_v2 SDL2::SDL2 android log vulkan)
+if(ANDROID_DXVK_XR)
+    find_package(OpenXR REQUIRED CONFIG)
+    target_include_directories(dxvk_smoke PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/android-dxvk-v2/patched-source/src/d3d9")
+    target_link_libraries(dxvk_smoke PRIVATE OpenXR::openxr_loader)
+    target_compile_definitions(dxvk_smoke PRIVATE PERIMETER_DXVK_XR=1)
+endif()
