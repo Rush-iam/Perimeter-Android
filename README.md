@@ -51,6 +51,7 @@ has been tested)
 - Two-finger drag: move the camera
 - Two-finger hold, then drag: rotate the camera
 - Pinch: zoom in or out
+- (menu-only) Two-finger drag up/down: mouse scroll
 
 ## Graphics renderer
 
