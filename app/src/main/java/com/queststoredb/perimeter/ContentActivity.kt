@@ -78,9 +78,14 @@ class ContentActivity : Activity() {
         }, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            topMargin = dp(MAIN_ENTRY_SPACING_DP)
-        })
+        ))
+        controls.addView(Button(this).apply {
+            setText(R.string.controls)
+            setOnClickListener { showControls() }
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
         addResolutionScaleControl(controls)
         addFrameRateLimitControl(controls)
         layout.addView(controls)
@@ -167,6 +172,68 @@ class ContentActivity : Activity() {
         editor.show()
     }
 
+    private fun showControls() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        addControlsSection(content, R.string.controls_touch_section)
+        addControlRow(content, R.string.controls_tap, R.string.controls_left_click)
+        addControlRow(content, R.string.controls_hold, R.string.controls_right_click)
+        addControlRow(content, R.string.controls_two_finger_tap, R.string.controls_right_click)
+        addControlRow(content, R.string.controls_two_finger_drag, R.string.controls_move_camera)
+        addControlRow(content, R.string.controls_hold_two_fingers_drag, R.string.controls_rotate_camera)
+        addControlRow(content, R.string.controls_pinch, R.string.controls_zoom)
+        addControlsSection(content, R.string.controls_menu_section)
+        addControlRow(content, R.string.controls_two_finger_scroll, R.string.controls_mouse_scroll)
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.controls)
+            .setView(ScrollView(this).apply {
+                isFillViewport = true
+                addView(content)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    minOf(dp(CONTROLS_DIALOG_MAX_HEIGHT_DP),
+                        (resources.displayMetrics.heightPixels * CONTROLS_DIALOG_HEIGHT_RATIO).toInt())
+                )
+            })
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun addControlsSection(layout: LinearLayout, title: Int) {
+        layout.addView(TextView(this).apply {
+            setText(title)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_MaterialComponents_Subtitle2)
+            setPadding(0, dp(CONTROLS_SECTION_TOP_PADDING_DP), 0, dp(CONTROLS_SECTION_BOTTOM_PADDING_DP))
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+    }
+
+    private fun addControlRow(layout: LinearLayout, gesture: Int, action: Int) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(CONTROLS_ROW_VERTICAL_PADDING_DP), 0, dp(CONTROLS_ROW_VERTICAL_PADDING_DP))
+        }
+        row.addView(TextView(this).apply {
+            setText(gesture)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_MaterialComponents_Body2)
+            gravity = Gravity.END
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(TextView(this).apply {
+            setText(action)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_MaterialComponents_Body2)
+            gravity = Gravity.START
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = dp(CONTROLS_COLUMN_GAP_DP)
+        })
+        layout.addView(row)
+    }
+
     private fun addResolutionScaleControl(layout: LinearLayout) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -174,9 +241,7 @@ class ContentActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(MAIN_ENTRY_SPACING_DP)
-            }
+            )
         }
         val label = TextView(this).apply {
             text = "${getString(R.string.render_resolution)}:"
@@ -216,9 +281,7 @@ class ContentActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(MAIN_ENTRY_SPACING_DP)
-            }
+            )
         }
         row.addView(CheckBox(this).apply {
             text = getString(
@@ -421,7 +484,12 @@ class ContentActivity : Activity() {
         const val MAIN_CONTROLS_WIDTH_DP = 300
         const val MAIN_CONTROLS_CORNER_RADIUS_PX = 6
         const val MAIN_CONTROLS_ELEVATION_DP = 8
-        const val MAIN_ENTRY_SPACING_DP = 8
+        const val CONTROLS_DIALOG_MAX_HEIGHT_DP = 440
+        const val CONTROLS_DIALOG_HEIGHT_RATIO = 0.6f
+        const val CONTROLS_SECTION_TOP_PADDING_DP = 12
+        const val CONTROLS_SECTION_BOTTOM_PADDING_DP = 4
+        const val CONTROLS_ROW_VERTICAL_PADDING_DP = 6
+        const val CONTROLS_COLUMN_GAP_DP = 12
         const val MAX_LOGO_WIDTH_DP = 500
         const val LOGO_SIDE_MARGIN_RATIO = 0.10f
         const val SELECT_CONTENT = 1
