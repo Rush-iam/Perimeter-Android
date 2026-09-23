@@ -76,6 +76,27 @@ Java_org_libsdl_app_SDLActivity_onNativeMouseButton(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_libsdl_app_SDLActivity_onNativeMouseButtonNoWarp(
+        JNIEnv*, jclass, jint button, jboolean pressed) {
+    int x = 0;
+    int y = 0;
+    SDL_GetMouseState(&x, &y);
+
+    SDL_Event event{};
+    event.type = pressed ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+    event.button.type = event.type;
+    event.button.button = static_cast<Uint8>(button);
+    event.button.state = pressed ? SDL_PRESSED : SDL_RELEASED;
+    event.button.clicks = 1;
+    event.button.x = x;
+    event.button.y = y;
+    if (SDL_PushEvent(&event) < 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Could not queue Android mouse button event: %s", SDL_GetError());
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_libsdl_app_SDLActivity_onNativeCameraRotation(
         JNIEnv*, jclass, jfloat horizontalDelta, jfloat verticalDelta) {
     const Uint32 eventType = androidTouchCameraRotationEventType();

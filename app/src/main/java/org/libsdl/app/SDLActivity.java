@@ -940,6 +940,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     public static native void onNativeKeyUp(int keycode);
     public static native void onNativeCameraDrag(boolean active);
     public static native void onNativeMouseButton(int button, boolean pressed, float x, float y);
+    public static native void onNativeMouseButtonNoWarp(int button, boolean pressed);
     public static native void onNativeCameraRotation(float horizontalDelta, float verticalDelta);
     public static native void onNativeTwoFingerGesture(float verticalWheelDelta, float pinchZoomDelta);
     public static native boolean onNativeSoftReturnKey();
@@ -951,6 +952,20 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     public static native void onNativeAccel(float x, float y, float z);
     public static native void onNativeClipboardChanged();
     public static native void onNativeSurfaceCreated();
+
+    public static void notifyMouseBackButtonEvent(boolean pressed) {
+        SDLActivity activity = mSingleton;
+        if (activity != null) {
+            activity.onMouseBackButtonEvent(pressed);
+        }
+    }
+
+    protected void onMouseBackButtonEvent(boolean pressed) {
+    }
+
+    protected boolean isRelativeMouseMode() {
+        return getMotionListener().inRelativeMode();
+    }
     public static native void onNativeSurfaceChanged();
     public static native void onNativeSurfaceDestroyed();
     public static native String nativeGetHint(String name);

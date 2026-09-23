@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.util.Log
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.window.OnBackInvokedDispatcher
 import org.libsdl.app.SDL
@@ -13,6 +14,8 @@ import org.libsdl.app.SDLActivity
 import org.libsdl.app.SDLSurface
 
 class MainActivity : SDLActivity() {
+    private var mouseBackButtonHeld = false
+
     override fun createSDLSurface(context: android.content.Context): SDLSurface =
         ScaledSDLSurface(context)
 
@@ -46,6 +49,11 @@ class MainActivity : SDLActivity() {
         }
     }
 
+    override fun onPause() {
+        setMouseBackButtonHeld(false)
+        super.onPause()
+    }
+
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         sendEscapeClick()
@@ -53,12 +61,40 @@ class MainActivity : SDLActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+            val fromRelativeMouse = event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE)
+            val fromMouse = event.isFromSource(InputDevice.SOURCE_MOUSE) || fromRelativeMouse
+            if (fromMouse) {
+                when (event.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        setMouseBackButtonHeld(true)
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        // In relative mode, ignore the early SOURCE_MOUSE key-up some mice
+                        // emit while held. Outside relative mode, it is the actual release.
+                        if (mouseBackButtonHeld &&
+                            (fromRelativeMouse || !isRelativeMouseMode())) {
+                            setMouseBackButtonHeld(false)
+                        }
+                    }
+                }
+            } else if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
                 sendEscapeClick()
             }
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onMouseBackButtonEvent(pressed: Boolean) {
+        setMouseBackButtonHeld(pressed)
+    }
+
+    private fun setMouseBackButtonHeld(pressed: Boolean) {
+        if (mouseBackButtonHeld == pressed || mBrokenLibraries) {
+            return
+        }
+        mouseBackButtonHeld = pressed
+        onNativeMouseButtonNoWarp(2, pressed)
     }
 
     private fun sendEscapeClick() {

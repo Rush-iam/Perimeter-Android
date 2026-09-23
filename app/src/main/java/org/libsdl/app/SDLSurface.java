@@ -311,6 +311,24 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             } catch(Exception ignored) {
             }
 
+            boolean backButtonTransition = event.getActionButton() == MotionEvent.BUTTON_BACK ||
+                    ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_UP) &&
+                     (mouseButton & MotionEvent.BUTTON_BACK) != 0);
+
+            if (backButtonTransition) {
+                boolean backButtonPressed =
+                        (mouseButton & MotionEvent.BUTTON_BACK) != 0;
+                if (action == MotionEvent.ACTION_BUTTON_PRESS) {
+                    backButtonPressed = true;
+                } else if (action == MotionEvent.ACTION_BUTTON_RELEASE ||
+                           (action == MotionEvent.ACTION_UP &&
+                            event.getActionButton() == MotionEvent.BUTTON_BACK)) {
+                    backButtonPressed = false;
+                }
+                SDLActivity.notifyMouseBackButtonEvent(backButtonPressed);
+                return true;
+            }
+
             // We need to check if we're in relative mouse mode and get the axis offset rather than the x/y values
             // if we are.  We'll leverage our existing motion listener
             SDLGenericMotionListener_API12 motionListener = SDLActivity.getMotionListener();
@@ -828,6 +846,12 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
             case MotionEvent.ACTION_BUTTON_PRESS:
             case MotionEvent.ACTION_BUTTON_RELEASE:
+
+                if (event.getActionButton() == MotionEvent.BUTTON_BACK) {
+                    SDLActivity.notifyMouseBackButtonEvent(
+                            action == MotionEvent.ACTION_BUTTON_PRESS);
+                    return true;
+                }
 
                 // Change our action value to what SDL's code expects.
                 if (action == MotionEvent.ACTION_BUTTON_PRESS) {
