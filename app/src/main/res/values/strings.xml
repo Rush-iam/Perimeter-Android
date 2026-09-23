@@ -9,7 +9,6 @@
     <string name="controls">Controls</string>
     <string name="controls_touch_section">TOUCH CONTROLS</string>
     <string name="controls_tap">Tap</string>
-    <string name="controls_hold">Hold</string>
     <string name="controls_two_finger_tap">Two-finger tap</string>
     <string name="controls_two_finger_drag">Two-finger drag</string>
     <string name="controls_hold_two_fingers_drag">Two-finger hold, then drag</string>

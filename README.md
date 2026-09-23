@@ -46,7 +46,6 @@ has been tested)
 ## Controls
 
 - Tap: left click
-- Hold: right click
 - Two-finger tap: right click
 - Two-finger drag: move camera
 - Two-finger hold, then drag: rotate camera

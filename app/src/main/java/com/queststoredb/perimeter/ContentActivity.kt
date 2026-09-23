@@ -179,7 +179,6 @@ class ContentActivity : Activity() {
         }
         addControlsSection(content, R.string.controls_touch_section)
         addControlRow(content, R.string.controls_tap, R.string.controls_left_click)
-        addControlRow(content, R.string.controls_hold, R.string.controls_right_click)
         addControlRow(content, R.string.controls_two_finger_tap, R.string.controls_right_click)
         addControlRow(content, R.string.controls_two_finger_drag, R.string.controls_move_camera)
         addControlRow(content, R.string.controls_hold_two_fingers_drag, R.string.controls_rotate_camera)

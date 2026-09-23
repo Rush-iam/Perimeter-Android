@@ -47,7 +47,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
     /*
      * Touch screens do not report mouse secondary-button events.  Keep enough
-     * state to turn stationary one- and two-finger taps into secondary clicks.
+     * state to turn stationary two-finger taps into secondary clicks.
      */
     private boolean mTwoFingerTapCandidate;
     private int mTwoFingerTapFirstPointerId;
@@ -77,16 +77,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     private int mPendingTouchPointerId;
     private float mPendingTouchX;
     private float mPendingTouchY;
-    private float mPendingTouchStartX;
-    private float mPendingTouchStartY;
-    private float mPendingTouchLastX;
-    private float mPendingTouchLastY;
     private float mPendingTouchPressure;
     private long mPendingTouchDownTime;
-    private boolean mPendingTouchMovedBeyondTapSlop;
-    private static final long SINGLE_FINGER_RIGHT_CLICK_DURATION_MS = 250L;
     private final Handler mTouchHandler = new Handler(Looper.getMainLooper());
-    private Runnable mPendingSingleTouchRightClick;
     private Runnable mTwoFingerRotationActivation;
 
     // Startup
@@ -118,7 +111,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     }
 
     public void handlePause() {
-        cancelPendingSingleTouchRightClick();
         cancelPendingTwoFingerRotation();
         endTwoFingerRotation();
         mTwoFingerTapCandidate = false;
@@ -637,13 +629,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         SDLActivity.onNativeMouse(0, MotionEvent.ACTION_UP, x, y, false);
     }
 
-    private void cancelPendingSingleTouchRightClick() {
-        if (mPendingSingleTouchRightClick != null) {
-            mTouchHandler.removeCallbacks(mPendingSingleTouchRightClick);
-            mPendingSingleTouchRightClick = null;
-        }
-    }
-
     private void cancelPendingTwoFingerRotation() {
         if (mTwoFingerRotationActivation != null) {
             mTouchHandler.removeCallbacks(mTwoFingerRotationActivation);
@@ -659,57 +644,26 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         final int action = event.getActionMasked();
 
         if (action == MotionEvent.ACTION_DOWN) {
-            cancelPendingSingleTouchRightClick();
             mPendingSingleTouch = true;
             mSuppressTouchSequence = false;
             mPendingTouchDeviceId = touchDevId;
             mPendingTouchPointerId = event.getPointerId(0);
             mPendingTouchX = event.getX(0) / mWidth;
             mPendingTouchY = event.getY(0) / mHeight;
-            mPendingTouchStartX = event.getX(0);
-            mPendingTouchStartY = event.getY(0);
-            mPendingTouchLastX = event.getX(0);
-            mPendingTouchLastY = event.getY(0);
             mPendingTouchPressure = Math.min(event.getPressure(0), 1.0f);
             mPendingTouchDownTime = event.getEventTime();
-            mPendingTouchMovedBeyondTapSlop = false;
-            mPendingSingleTouchRightClick = () -> {
-                mPendingSingleTouchRightClick = null;
-                if (mPendingSingleTouch && !mPendingTouchMovedBeyondTapSlop) {
-                    emitRightClick(mPendingTouchLastX, mPendingTouchLastY);
-                    mPendingSingleTouch = false;
-                    mSuppressTouchSequence = true;
-                }
-            };
-            mTouchHandler.postDelayed(mPendingSingleTouchRightClick,
-                                      SINGLE_FINGER_RIGHT_CLICK_DURATION_MS);
             return true;
         }
 
         if (mPendingSingleTouch && action == MotionEvent.ACTION_POINTER_DOWN) {
-            cancelPendingSingleTouchRightClick();
             mPendingSingleTouch = false;
             mSuppressTouchSequence = true;
             return true;
         }
 
         if (mPendingSingleTouch && action == MotionEvent.ACTION_MOVE) {
-            int pointerIndex = event.findPointerIndex(mPendingTouchPointerId);
-            if (pointerIndex >= 0) {
-                mPendingTouchLastX = event.getX(pointerIndex);
-                mPendingTouchLastY = event.getY(pointerIndex);
-            }
-            if (pointerIndex < 0 || movedBeyondTapSlop(event, pointerIndex,
-                                                       mPendingTouchStartX, mPendingTouchStartY)) {
-                mPendingTouchMovedBeyondTapSlop = true;
-                cancelPendingSingleTouchRightClick();
-            }
             if (event.getEventTime() - mPendingTouchDownTime < TWO_FINGER_DRAG_GRACE_PERIOD_MS) {
                 // Give a second finger time to join before committing this to a one-finger drag.
-                return true;
-            }
-            if (!mPendingTouchMovedBeyondTapSlop) {
-                // Keep a stationary press pending so a long tap can become a right click.
                 return true;
             }
             SDLActivity.onNativeTouch(mPendingTouchDeviceId, mPendingTouchPointerId,
@@ -720,23 +674,12 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
 
         if (mPendingSingleTouch && action == MotionEvent.ACTION_CANCEL) {
-            cancelPendingSingleTouchRightClick();
             mPendingSingleTouch = false;
             return true;
         }
 
         if (mPendingSingleTouch && action == MotionEvent.ACTION_UP) {
-            cancelPendingSingleTouchRightClick();
             int pointerIndex = event.findPointerIndex(mPendingTouchPointerId);
-            boolean isStationary = !mPendingTouchMovedBeyondTapSlop && pointerIndex >= 0 &&
-                    !movedBeyondTapSlop(event, pointerIndex,
-                                        mPendingTouchStartX, mPendingTouchStartY);
-            if (isStationary &&
-                event.getEventTime() - mPendingTouchDownTime >= SINGLE_FINGER_RIGHT_CLICK_DURATION_MS) {
-                emitRightClick(event.getX(pointerIndex), event.getY(pointerIndex));
-                mPendingSingleTouch = false;
-                return true;
-            }
             SDLActivity.onNativeTouch(mPendingTouchDeviceId, mPendingTouchPointerId,
                                       MotionEvent.ACTION_DOWN, mPendingTouchX,
                                       mPendingTouchY, mPendingTouchPressure);
