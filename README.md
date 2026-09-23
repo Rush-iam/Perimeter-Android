@@ -45,13 +45,13 @@ has been tested)
 
 ## Controls
 
-- Single-finger touch: left mouse button
-- Single-finger hold: right mouse button
-- Two-finger tap: right mouse button
-- Two-finger drag: move the camera
-- Two-finger hold, then drag: rotate the camera
-- Pinch: zoom in or out
-- (menu-only) Two-finger drag up/down: mouse scroll
+- Tap: left click
+- Hold: right click
+- Two-finger tap: right click
+- Two-finger drag: move camera
+- Two-finger hold, then drag: rotate camera
+- Pinch: zoom camera
+- (in menus) Two-finger drag: mouse scroll
 
 ## Graphics renderer
 
