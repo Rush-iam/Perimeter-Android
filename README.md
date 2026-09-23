@@ -52,6 +52,9 @@ has been tested)
 - Pinch: zoom camera
 - (in menus) Two-finger drag: mouse scroll
 
+Mouse and keyboard are also supported.
+For mouse play, uncheck **Disable edge scrolling** in **Options**.
+
 ## Graphics renderer
 
 The app autoselects the best supported renderer. You can change it in **Options**:
