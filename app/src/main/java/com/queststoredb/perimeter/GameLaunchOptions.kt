@@ -89,7 +89,8 @@ class GameLaunchOptions(private val context: Context) {
             "content=$contentPath",
             "FullScreen=1",
             "VSync=1",
-            "RunBackground=0"
+            "RunBackground=0",
+            "show_lifebars=1"
         )
         // The alternate-LOD cache uses shared tilemap resources and is safe
         // for both Android renderers. Keep an explicit 0 authoritative for

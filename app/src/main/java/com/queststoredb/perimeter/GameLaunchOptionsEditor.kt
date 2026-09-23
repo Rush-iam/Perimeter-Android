@@ -346,6 +346,8 @@ internal class GameLaunchOptionsEditor(
             Option("", "start_splash", "Skip intro movies", Kind.INVERTED_BOOLEAN),
             Option("", "android_disable_edge_scrolling", "Disable edge scrolling", Kind.TOGGLE,
                 "Uncheck for mouse play to enable edge scrolling.", defaultChecked = true),
+            Option("", "show_lifebars", "Show health bars by default", Kind.TOGGLE,
+                defaultChecked = true),
             Option("", GRAPH_KEY, "Graphics renderer", Kind.CHOICE),
             Option("", "show_fps", "Show FPS counter", Kind.TOGGLE),
             Option("", "sustained_performance", "Android Sustained Performance Mode", Kind.TOGGLE,
