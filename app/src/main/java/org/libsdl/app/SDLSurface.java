@@ -566,6 +566,10 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             SDLActivity.onNativeCameraRotation(deltaX * rotationScale,
                                                deltaY * rotationScale);
         }
+        float zoomDelta = updateTwoFingerPinch(event, firstIndex, secondIndex);
+        if (zoomDelta != 0.0f) {
+            SDLActivity.onNativeTwoFingerGesture(0.0f, zoomDelta);
+        }
         mTwoFingerRotationLastX = x;
         mTwoFingerRotationLastY = y;
     }
@@ -584,15 +588,18 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         float verticalDelta = midpointY - mTwoFingerLastMidpointY;
         mTwoFingerLastMidpointY = midpointY;
 
-        float span = twoFingerSpan(event, firstIndex, secondIndex);
-        float spanDelta = span - mTwoFingerLastSpan;
-        mTwoFingerLastSpan = span;
-        // Menu wheel direction is opposite screen Y: dragging up scrolls up.
         float wheelDelta = -verticalDelta / mTwoFingerZoomStep;
-        float zoomDelta = spanDelta / mTwoFingerZoomStep;
+        float zoomDelta = updateTwoFingerPinch(event, firstIndex, secondIndex);
         if (wheelDelta != 0.0f || zoomDelta != 0.0f) {
             SDLActivity.onNativeTwoFingerGesture(wheelDelta, zoomDelta);
         }
+    }
+
+    private float updateTwoFingerPinch(MotionEvent event, int firstIndex, int secondIndex) {
+        float span = twoFingerSpan(event, firstIndex, secondIndex);
+        float spanDelta = span - mTwoFingerLastSpan;
+        mTwoFingerLastSpan = span;
+        return spanDelta / mTwoFingerZoomStep;
     }
 
     private float twoFingerSpan(MotionEvent event, int firstIndex, int secondIndex) {
